@@ -21,7 +21,10 @@ def test_bottom_fractal_confirmation():
     e = FractalEngine()
     e.update(c(1, 10, 12, 9, 11))
     e.update(c(2, 11, 11, 6, 7))
-    events = e.update(c(3, 7, 10, 7, 9))
+    # This third candle is outside the previous range, so it becomes an
+    # independent ProcessedCandle instead of being absorbed by inclusion.
+    events = e.update(c(3, 7, 13, 7, 9))
+    assert [x.type for x in events] == ["FRACTAL_CONFIRMED"]
     assert events[0].fractal.type is FractalType.BOTTOM
 
 
@@ -34,13 +37,16 @@ def test_inclusion_direction_and_source_ids():
     assert p[0].source_raw_ids == [100, 101]
 
 
-def test_confirmed_fractal_is_invalidated_when_right_bar_changes():
+def test_confirmed_fractal_remains_stable_when_right_bar_is_extended_by_downward_inclusion():
     e = FractalEngine()
     e.update(c(1, 10, 10, 8, 9))
     e.update(c(2, 9, 12, 9, 11))
     assert e.update(c(3, 11, 11, 7, 8))[0].type == "FRACTAL_CONFIRMED"
 
-    # The fourth raw candle is included into the right processed candle and
-    # changes the three-candle window, so the prior confirmation is invalid.
-    events = e.update(c(4, 8, 13, 7, 12))
-    assert any(x.type == "FRACTAL_INVALIDATED" for x in events)
+    # After a top fractal the inclusion direction is downward. Extending the
+    # right ProcessedCandle therefore takes the lower high/lower low and does
+    # not retroactively invalidate the confirmed top.
+    events = e.update(c(4, 8, 10, 6, 7))
+    assert events == []
+    assert len(e.confirmed_fractals()) == 1
+    assert e.confirmed_fractals()[0].type is FractalType.TOP
