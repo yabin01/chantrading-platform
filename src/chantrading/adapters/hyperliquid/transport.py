@@ -1,17 +1,36 @@
-"""Injectable WebSocket transport boundary.
-
-The default implementation is intentionally absent; production transport is
-added only after the event normalization contract is stable.
-"""
+"""Production-oriented WebSocket transport boundary."""
 from __future__ import annotations
+import json
 from typing import Callable, Protocol
-
 
 class WebSocketTransport(Protocol):
     def connect(self, on_message: Callable[[dict], None], on_close: Callable[[], None]) -> None: ...
     def send(self, payload: dict) -> None: ...
     def close(self) -> None: ...
 
+class WebSocketAppTransport:
+    """Adapter around websocket-client; import is lazy for test isolation."""
+    def __init__(self, url: str):
+        self.url = url
+        self._ws = None
+
+    def connect(self, on_message, on_close) -> None:
+        import websocket
+        self._ws = websocket.WebSocketApp(
+            self.url,
+            on_message=lambda _ws, message: on_message(json.loads(message)),
+            on_close=lambda *_args: on_close(),
+        )
+        self._ws.run_forever()
+
+    def send(self, payload: dict) -> None:
+        if self._ws is None:
+            raise RuntimeError("websocket transport is not connected")
+        self._ws.send(json.dumps(payload))
+
+    def close(self) -> None:
+        if self._ws is not None:
+            self._ws.close()
 
 class InMemoryWebSocketTransport:
     def __init__(self):
