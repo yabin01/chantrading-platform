@@ -27,7 +27,7 @@ def main():
     stream=LiveTestnetCandleStream(
         ws_factory=lambda url: websocket.create_connection(
             url,
-            timeout=30,
+            timeout=5,
             enable_multithread=True,
         ),
         on_candle=on_candle,
