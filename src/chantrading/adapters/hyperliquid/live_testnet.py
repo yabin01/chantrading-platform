@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import time
+
+from websocket import WebSocketTimeoutException
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -98,7 +100,14 @@ class LiveTestnetCandleStream:
 
         try:
             while self.running and time.time() < deadline:
-                raw = ws.recv()
+                try:
+                    raw = ws.recv()
+                except WebSocketTimeoutException:
+                    # recv() timeouts are expected while waiting for the next
+                    # 1m update; re-check the canary deadline instead of
+                    # treating an idle interval as a transport failure.
+                    continue
+
                 event = parse_candle_message(raw)
 
                 if event is None:
