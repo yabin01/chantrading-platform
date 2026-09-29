@@ -1,15 +1,15 @@
 """Live Hyperliquid Testnet market-data canary transport.
 
-This module is intentionally read-only: it connects to Testnet market data,
-normalizes completed 1m candles, and emits them to the runtime callback.
-Execution/signing is not enabled here.
+Read-only transport for the first real Testnet canary. Hyperliquid puts
+channel at the websocket message top level; subscription acknowledgements
+and other non-candle messages are ignored by the stream.
 """
 from __future__ import annotations
 
 import json
 import time
 from dataclasses import dataclass
-from typing import Callable, Any
+from typing import Any, Callable
 
 TESTNET_WS_URL = "wss://api.hyperliquid-testnet.xyz/ws"
 
@@ -26,16 +26,22 @@ class LiveCandle:
     volume: str
 
 
-def normalize_candle_message(message: str | bytes) -> LiveCandle:
+def parse_candle_message(message: str | bytes) -> LiveCandle | None:
     payload = json.loads(message)
-    data = payload.get("data", {})
-    if data.get("channel") != "candle":
-        raise ValueError("unexpected websocket channel")
-    candle = data.get("data")
-    if not candle:
-        raise ValueError("missing candle data")
+    if payload.get("channel") != "candle":
+        return None
+
+    candle = payload.get("data")
+    if not isinstance(candle, dict):
+        raise ValueError("candle message missing data object")
     if candle.get("i") != "1m":
         raise ValueError("live canary accepts only 1m candles")
+
+    required = ("s", "i", "t", "o", "h", "l", "c", "v")
+    missing = [key for key in required if key not in candle]
+    if missing:
+        raise ValueError(f"candle message missing fields: {missing}")
+
     return LiveCandle(
         coin=str(candle["s"]),
         interval=str(candle["i"]),
@@ -48,15 +54,33 @@ def normalize_candle_message(message: str | bytes) -> LiveCandle:
     )
 
 
+def normalize_candle_message(message: str | bytes) -> LiveCandle:
+    event = parse_candle_message(message)
+    if event is None:
+        raise ValueError("message is not a candle event")
+    return event
+
+
 def candle_subscription(coin: str) -> str:
-    return json.dumps({
-        "method": "subscribe",
-        "subscription": {"type": "candle", "coin": coin, "interval": "1m"},
-    }, separators=(",", ":"))
+    return json.dumps(
+        {
+            "method": "subscribe",
+            "subscription": {
+                "type": "candle",
+                "coin": coin,
+                "interval": "1m",
+            },
+        },
+        separators=(",", ":"),
+    )
 
 
 class LiveTestnetCandleStream:
-    def __init__(self, ws_factory: Callable[..., Any], on_candle: Callable[[LiveCandle], None]):
+    def __init__(
+        self,
+        ws_factory: Callable[..., Any],
+        on_candle: Callable[[LiveCandle], None],
+    ):
         self.ws_factory = ws_factory
         self.on_candle = on_candle
         self.running = False
@@ -66,16 +90,23 @@ class LiveTestnetCandleStream:
     def run(self, coin: str = "ETH", duration_seconds: int = 600) -> int:
         if duration_seconds <= 0:
             raise ValueError("duration_seconds must be positive")
+
         ws = self.ws_factory(TESTNET_WS_URL)
         ws.send(candle_subscription(coin))
         self.running = True
         deadline = time.time() + duration_seconds
+
         try:
             while self.running and time.time() < deadline:
                 raw = ws.recv()
-                event = normalize_candle_message(raw)
+                event = parse_candle_message(raw)
+
+                if event is None:
+                    continue
+
                 if self.last_candle_ts is not None and event.timestamp_ms < self.last_candle_ts:
                     raise RuntimeError("out-of-order candle")
+
                 if event.timestamp_ms != self.last_candle_ts:
                     self.last_candle_ts = event.timestamp_ms
                     self.received += 1
@@ -85,6 +116,7 @@ class LiveTestnetCandleStream:
             close = getattr(ws, "close", None)
             if close:
                 close()
+
         return self.received
 
     def stop(self):
