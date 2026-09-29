@@ -1,0 +1,2 @@
+# Minimal dependency for the live Testnet WebSocket canary
+websocket-client>=1.8,<2
