@@ -290,7 +290,7 @@ class Live1MRecordedRuntime:
         return LiveRecordingVerification(
             len(candles),
             events_hash(recorded_events),
-            replay.state_hash,
+            events_hash(replay_structural_events),
             self.engine.snapshot(),
             replay.snapshot,
         )
