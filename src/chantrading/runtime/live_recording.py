@@ -18,6 +18,7 @@ from .deterministic_replay import (
 )
 from .event_store import SQLiteEventStore
 from .event_integrity import ONE_MINUTE_MS, CanonicalCandleIdentity, classify_1m_candle
+from .idempotency import CandleIdempotencyLedger
 from .live_chanlun import Live1MStructureEngine
 from chantrading.adapters.hyperliquid.live_testnet import LiveCandle
 
@@ -59,6 +60,7 @@ class Live1MRecordedRuntime:
         self._last_candle: LiveCandle | None = None
         self._connection_generation = 0
         self._resync_required = False
+        self._accepted_identities = CandleIdempotencyLedger()
 
     @property
     def resync_required(self) -> bool:
@@ -139,8 +141,7 @@ class Live1MRecordedRuntime:
                 self._last_candle.volume,
             )
 
-        decision = classify_1m_candle(identity, previous)
-        if decision.action == "ACCEPT":
+        identity_key = (\n            identity.coin, identity.interval, identity.timestamp_ms,\n            identity.open, identity.high, identity.low, identity.close, identity.volume,\n        )\n        if self._accepted_identities.contains(identity_key):\n            return CandleRecoveryDecision(\n                "DROP_DUPLICATE",\n                "accepted_identity_already_seen",\n                identity.timestamp_ms,\n                identity.timestamp_ms,\n                0,\n            )\n\n        decision = classify_1m_candle(identity, previous)\n        if decision.action == "ACCEPT":
             return CandleRecoveryDecision(
                 decision.action,
                 decision.reason,
@@ -201,6 +202,7 @@ class Live1MRecordedRuntime:
 
         self._resync_required = False
         self._last_candle = candle
+        self._accepted_identities.admit(identity_key)
         self._event_ordinal += 1
         candle_id = f"candle:{candle.coin}:{candle.timestamp_ms}"
         self.store.append(
