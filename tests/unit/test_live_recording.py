@@ -305,7 +305,10 @@ def test_recovery_completion_survives_restart_without_requiring_resync(tmp_path)
         assert runtime.resync_required is False
         assert runtime.recovery_state.value == "gap_detected"
         assert runtime.connection_generation == 1
-        assert runtime.engine.candles_processed == 3
+        # The initial 180s candle was observed after 60s and correctly
+        # triggered RESYNC because 120s was missing, so it was never forwarded
+        # to the structural engine. Recovery supplies only the missing 120s candle.
+        assert runtime.engine.candles_processed == 2
 
 def test_restart_downgrades_interrupted_recovery_to_gap_detected(tmp_path):
     from chantrading.runtime.recovery import RecoveryState
