@@ -277,3 +277,37 @@ def test_center_relation_is_order_sensitive():
     )
     assert CenterEngine.classify_center_pair(lower, higher) == "UP_CONTINUATION"
     assert CenterEngine.classify_center_pair(higher, lower) == "DOWN_CONTINUATION"
+
+
+def test_extension_limit_allows_up_to_five_in_strict_recursive_mode():
+    for count in range(0, 6):
+        assert CenterEngine.classify_extension_count(count) == "WITHIN_EXTENSION_LIMIT"
+
+
+def test_extension_limit_requires_higher_level_after_five_in_strict_recursive_mode():
+    assert CenterEngine.classify_extension_count(6) == "HIGHER_LEVEL_REQUIRED"
+
+
+def test_same_level_decomposition_does_not_auto_upgrade_at_six():
+    assert (
+        CenterEngine.classify_extension_count(6, mode="SAME_LEVEL_DECOMPOSITION")
+        == "SAME_LEVEL_CONTINUATION"
+    )
+
+
+def test_extension_limit_rejects_negative_count():
+    try:
+        CenterEngine.classify_extension_count(-1)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("negative extension count must be rejected")
+
+
+def test_extension_limit_rejects_unknown_mode():
+    try:
+        CenterEngine.classify_extension_count(6, mode="UNKNOWN")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unknown extension mode must be rejected")
