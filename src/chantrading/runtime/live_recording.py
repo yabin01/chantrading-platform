@@ -138,6 +138,11 @@ class Live1MRecordedRuntime:
                 self._resync_required = False
                 self._resync_connection_generation = None
                 interrupted_recovery = False
+                # A restart after a completed resync must not silently claim a
+                # healthy transport lifecycle. The durable recovery boundary
+                # is reconstructed as gap_detected; a fresh reconnect returns
+                # it to waiting_reconnect before any subsequent recovery.
+                self._recovery = RecoveryStateMachine(RecoveryState.GAP_DETECTED)
 
         for candle in accepted:
             self.engine.on_candle(candle)
