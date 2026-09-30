@@ -199,6 +199,24 @@ class CenterEngine:
         return self._current.zd, self._current.zg
 
     @staticmethod
+    def classify_center_expansion(previous: Center, following: Center) -> str:
+        """Detect higher-level center expansion from two same-level centers.
+
+        The higher-level relation is created by overlap of the two centers'
+        surrounding fluctuation ranges [DD, GG] while their own center
+        intervals [ZD, ZG] remain disjoint. This is a structural fact only.
+        """
+        centers_overlap = CenterEngine._overlaps(
+            previous.zd, previous.zg, following.zd, following.zg
+        )
+        peripheral_overlap = CenterEngine._overlaps(
+            previous.dd, previous.gg, following.dd, following.gg
+        )
+        if not centers_overlap and peripheral_overlap:
+            return "HIGHER_LEVEL_EXPANSION"
+        return "NO_HIGHER_LEVEL_EXPANSION"
+
+    @staticmethod
     def classify_center_pair(previous: Center, following: Center) -> str:
         """Classify two same-level centers using Lesson 20 center theorem II.
 
