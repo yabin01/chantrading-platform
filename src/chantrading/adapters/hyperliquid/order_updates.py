@@ -1,7 +1,9 @@
 """Normalize Hyperliquid Testnet order/fill/position updates."""
 from __future__ import annotations
+
 from dataclasses import dataclass
 import json
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -31,19 +33,27 @@ class PositionUpdate:
     timestamp: int
 
 
-def _data(message):
-    payload=json.loads(message)
-    return payload.get("data", {})
+def _payload(message: str | bytes) -> tuple[str, Any]:
+    payload = json.loads(message)
+    return str(payload.get("channel", "")), payload.get("data")
 
 
 def parse_order_update(message: str | bytes) -> OrderUpdate:
-    data=_data(message)
-    if data.get("channel") != "orderUpdates":
+    channel, data = _payload(message)
+    if channel != "orderUpdates":
         raise ValueError("not an orderUpdates message")
-    item=data.get("data")
-    if isinstance(item, list):
-        item=item[0] if item else {}
-    order=item.get("order", item)
+
+    if isinstance(data, list):
+        item = data[0] if data else {}
+    elif isinstance(data, dict):
+        item = data
+    else:
+        item = {}
+
+    order = item.get("order", item)
+    if not isinstance(order, dict):
+        order = {}
+
     return OrderUpdate(
         client_order_id=order.get("cloid") or order.get("clientOrderId"),
         exchange_order_id=str(order.get("oid")) if order.get("oid") is not None else None,
@@ -54,12 +64,21 @@ def parse_order_update(message: str | bytes) -> OrderUpdate:
 
 
 def parse_fill(message: str | bytes) -> FillUpdate:
-    data=_data(message)
-    if data.get("channel") != "userFills":
+    channel, data = _payload(message)
+    if channel != "userFills":
         raise ValueError("not a userFills message")
-    item=data.get("data")
-    if isinstance(item, list):
-        item=item[0] if item else {}
+
+    if isinstance(data, dict):
+        fills = data.get("fills", [])
+        item = fills[0] if isinstance(fills, list) and fills else data
+    elif isinstance(data, list):
+        item = data[0] if data else {}
+    else:
+        item = {}
+
+    if not isinstance(item, dict):
+        raise ValueError("missing fill payload")
+
     return FillUpdate(
         exchange_order_id=str(item.get("oid")) if item.get("oid") is not None else None,
         symbol=str(item.get("coin")),
@@ -71,13 +90,21 @@ def parse_fill(message: str | bytes) -> FillUpdate:
 
 
 def parse_position(message: str | bytes) -> PositionUpdate:
-    data=_data(message)
-    if data.get("channel") != "clearinghouseState":
+    channel, data = _payload(message)
+    if channel != "clearinghouseState":
         raise ValueError("not a clearinghouseState message")
-    states=data.get("data", {}).get("assetPositions", [])
+    if not isinstance(data, dict):
+        raise ValueError("missing clearinghouse payload")
+
+    states = data.get("assetPositions", [])
     if not states:
         raise ValueError("missing asset position")
-    p=states[0].get("position", states[0])
+
+    state = states[0]
+    p = state.get("position", state) if isinstance(state, dict) else {}
+    if not isinstance(p, dict):
+        raise ValueError("missing asset position")
+
     return PositionUpdate(
         symbol=str(p.get("coin")),
         size=str(p.get("szi")),
