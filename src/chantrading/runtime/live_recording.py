@@ -271,7 +271,6 @@ class Live1MRecordedRuntime:
             raise RuntimeError(
                 f"recovery state must be waiting_reconnect, got {self._recovery.state.value}"
             )
-        self._recovery.transition(RecoveryState.RECOVERING)
         if (
             self._resync_connection_generation is None
             or self._connection_generation <= self._resync_connection_generation
@@ -304,6 +303,7 @@ class Live1MRecordedRuntime:
             batch_keys.add(key)
             expected = candle.timestamp_ms + ONE_MINUTE_MS
 
+        self._recovery.transition(RecoveryState.RECOVERING)
         all_events: list[LiveStructureEvent] = []
         for candle in candles:
             events = self.on_candle(candle)
