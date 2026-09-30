@@ -114,6 +114,8 @@ class Live1MRecordedRuntime:
             elif row.name == "WS_DISCONNECTED":
                 self._resync_required = True
                 self._resync_connection_generation = self._connection_generation
+                if self._recovery.state is RecoveryState.HEALTHY:
+                    self._recovery.transition(RecoveryState.GAP_DETECTED)
             elif row.name == "WS_RECONNECTED":
                 generation = int(
                     row.payload.get(
@@ -267,15 +269,15 @@ class Live1MRecordedRuntime:
             raise ValueError("recovery batch must not be empty")
         if not self._resync_required:
             raise RuntimeError("recovery is not required")
-        if self._recovery.state is not RecoveryState.WAITING_RECONNECT:
-            raise RuntimeError(
-                f"recovery state must be waiting_reconnect, got {self._recovery.state.value}"
-            )
         if (
             self._resync_connection_generation is None
             or self._connection_generation <= self._resync_connection_generation
         ):
             raise ValueError("recovery requires a fresh reconnect after resync")
+        if self._recovery.state is not RecoveryState.WAITING_RECONNECT:
+            raise RuntimeError(
+                f"recovery state must be waiting_reconnect, got {self._recovery.state.value}"
+            )
         expected = (
             None
             if self._last_candle is None
