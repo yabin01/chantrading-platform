@@ -100,6 +100,30 @@ def test_duplicate_is_dropped_without_replaying_structure(tmp_path):
         assert runtime.resync_required is False
 
 
+def test_resync_gate_requires_fresh_reconnect_before_accepting_candle(tmp_path):
+    with Live1MRecordedRuntime(tmp_path/"runtime.db") as runtime:
+        runtime.on_candle(c(60_000))
+        runtime.on_candle(c(180_000))
+        assert runtime.resync_required is True
+        processed = runtime.engine.candles_processed
+
+        runtime.on_candle(c(120_000))
+        assert runtime.engine.candles_processed == processed
+        assert runtime.resync_required is True
+
+        recovery = [
+            row for row in runtime.store.iter_events()
+            if row.name == "CANDLE_RECOVERY"
+        ]
+        assert recovery[-1].payload["action"] == "RESYNC_REQUIRED"
+        assert recovery[-1].payload["reason"] == "fresh_reconnect_required"
+
+        runtime.on_reconnect()
+        runtime.on_candle(c(120_000))
+        assert runtime.resync_required is False
+        assert runtime.engine.candles_processed == processed + 1
+
+
 def test_gap_requires_resync_and_recovery_is_contiguous(tmp_path):
     with Live1MRecordedRuntime(tmp_path/"runtime.db") as runtime:
         runtime.on_candle(c(60_000))
