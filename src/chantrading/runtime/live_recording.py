@@ -150,7 +150,7 @@ class Live1MRecordedRuntime:
             identity.low,
             identity.close,
             identity.volume,
-        )\n        if self._accepted_identities.contains(identity_key):\n            return CandleRecoveryDecision(\n                "DROP_DUPLICATE",\n                "accepted_identity_already_seen",\n                identity.timestamp_ms,\n                identity.timestamp_ms,\n                0,\n            )\n\n        decision = classify_1m_candle(identity, previous)\n        if decision.action == "ACCEPT":
+        )\n        if self._accepted_identities.contains(identity_key):\n            return self._append_recovery(\n                candle,\n                "DROP_DUPLICATE",\n                "accepted_identity_already_seen",\n                identity.timestamp_ms,\n            )\n\n        decision = classify_1m_candle(identity, previous)\n        if decision.action == "ACCEPT":
             return CandleRecoveryDecision(
                 decision.action,
                 decision.reason,
@@ -267,7 +267,7 @@ class Live1MRecordedRuntime:
                         row.sequence,
                         p["coin"],
                         p["interval"],
-                        int(p["timestamp_ms"]),
+                        int(p.get("timestamp_ms", row.timestamp_ms)),
                         str(p["open"]),
                         str(p["high"]),
                         str(p["low"]),
