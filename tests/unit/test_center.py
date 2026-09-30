@@ -321,7 +321,7 @@ def test_center_overlap_requires_positive_width():
 
 def test_center_expansion_detects_exact_peripheral_touch_as_no_overlap():
     previous = Center(id="C1", state=CenterState.CONFIRMED, segment_ids=["S1"], zg=110, zd=100, gg=112, dd=98, start_index=1, end_index=3)
-    following = Center(id="C2", state=CenterState.CONFIRMED, segment_ids=["S4"], zg=95, zd=90, gg=100, dd=88, start_index=4, end_index=6)
+    following = Center(id="C2", state=CenterState.CONFIRMED, segment_ids=["S4"], zg=95, zd=90, gg=98, dd=88, start_index=4, end_index=6)
     assert CenterEngine.classify_center_expansion(previous, following) == "NO_HIGHER_LEVEL_EXPANSION"
 
 
