@@ -1,5 +1,5 @@
 """Unit tests for the strict 1M CenterEngine."""
-from chantrading.chanlun.center import CenterEngine, CenterEventType, CenterState
+from chantrading.chanlun.center import Center, CenterEngine, CenterEventType, CenterState
 from chantrading.chanlun.segment import Segment, SegmentDirection, SegmentState
 
 
