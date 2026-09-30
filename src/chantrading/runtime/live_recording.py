@@ -19,6 +19,7 @@ from .deterministic_replay import (
 from .event_store import SQLiteEventStore
 from .event_integrity import ONE_MINUTE_MS, CanonicalCandleIdentity, classify_1m_candle
 from .idempotency import CandleIdempotencyLedger
+from .recovery import RecoveryState, RecoveryStateMachine
 from .live_chanlun import Live1MStructureEngine
 from chantrading.adapters.hyperliquid.live_testnet import LiveCandle
 
@@ -62,6 +63,7 @@ class Live1MRecordedRuntime:
         self._resync_required = False
         self._resync_connection_generation: int | None = None
         self._accepted_identities = CandleIdempotencyLedger()
+        self._recovery = RecoveryStateMachine()
         self._restore_from_store()
 
     @staticmethod
@@ -131,6 +133,10 @@ class Live1MRecordedRuntime:
             self.engine.on_candle(candle)
 
     @property
+    def recovery_state(self) -> RecoveryState:
+        return self._recovery.state
+
+    @property
     def resync_required(self) -> bool:
         return self._resync_required
 
@@ -140,11 +146,15 @@ class Live1MRecordedRuntime:
 
     def on_disconnect(self, reason: str = "transport_disconnect") -> None:
         self._resync_required = True
+        if self._recovery.state is RecoveryState.HEALTHY:
+            self._recovery.transition(RecoveryState.GAP_DETECTED)
         self._resync_connection_generation = self._connection_generation
         self._append_lifecycle("WS_DISCONNECTED", {"reason": reason})
 
     def on_reconnect(self) -> None:
         self._connection_generation += 1
+        if self._recovery.state is RecoveryState.GAP_DETECTED:
+            self._recovery.transition(RecoveryState.WAITING_RECONNECT)
         self._append_lifecycle(
             "WS_RECONNECTED",
             {"connection_generation": self._connection_generation},
@@ -257,6 +267,11 @@ class Live1MRecordedRuntime:
             raise ValueError("recovery batch must not be empty")
         if not self._resync_required:
             raise RuntimeError("recovery is not required")
+        if self._recovery.state is not RecoveryState.WAITING_RECONNECT:
+            raise RuntimeError(
+                f"recovery state must be waiting_reconnect, got {self._recovery.state.value}"
+            )
+        self._recovery.transition(RecoveryState.RECOVERING)
         if (
             self._resync_connection_generation is None
             or self._connection_generation <= self._resync_connection_generation
@@ -294,7 +309,12 @@ class Live1MRecordedRuntime:
             events = self.on_candle(candle)
             all_events.extend(events)
         if self._resync_required:
+            self._recovery.transition(RecoveryState.VERIFYING)
+            self._recovery.transition(RecoveryState.GAP_DETECTED)
             raise RuntimeError("recovery batch did not restore contiguous state")
+        self._recovery.transition(RecoveryState.VERIFYING)
+        self._recovery.transition(RecoveryState.RECOVERED)
+        self._recovery.reset()
         self._append_lifecycle(
             "WS_RESYNC_COMPLETE",
             {"last_candle_timestamp_ms": self._last_candle.timestamp_ms},
@@ -326,6 +346,8 @@ class Live1MRecordedRuntime:
             return ()
         if decision.action == "RESYNC":
             self._resync_required = True
+            if self._recovery.state is RecoveryState.HEALTHY:
+                self._recovery.transition(RecoveryState.GAP_DETECTED)
             self._resync_connection_generation = self._connection_generation
             return ()
 
