@@ -114,6 +114,8 @@ class SegmentEngine:
         self.segments: list[Segment] = []
         self._current: Segment | None = None
         self._pending_fractal: FeatureFractal | None = None
+        self._pending_reverse_features: list[FeatureElement] = []
+        self._pending_reverse_standard: list[StandardFeatureElement] = []
         self._seen_bi_ids: set[str] = set()
 
     def update(self, bi: Bi) -> list[SegmentEvent]:
@@ -133,8 +135,32 @@ class SegmentEngine:
         # A confirmed segment starts the next segment with the new Bi.
         if current.state is SegmentState.CONFIRMED:
             self._current = self._new_segment(bi)
-            self._pending_fractal = None
+            self._clear_pending_type2()
             return [SegmentEvent("SEGMENT_STARTED", self._current.id, bi.id)]
+
+        if current.state is SegmentState.TYPE_2_PENDING:
+            reverse_feature = self._feature_from_bi(bi)
+            self._pending_reverse_features.append(reverse_feature)
+            self._rebuild_pending_reverse(current)
+            reverse_fractal = self._detect_reverse_fractal(current)
+            if reverse_fractal is None:
+                return [SegmentEvent("TYPE_2_REVERSE_FEATURE_ADDED", current.id, bi.id,
+                                      self._pending_fractal.id if self._pending_fractal else None,
+                                      BreakType.TYPE_2, current)]
+            pending = self._pending_fractal
+            assert pending is not None
+            current.state = SegmentState.CONFIRMED
+            current.confirmed_end_bi_id = self._source_end_bi(current, pending)
+            current.end_index = self._feature_end_index(current, pending)
+            current.break_type = BreakType.TYPE_2
+            self.segments.append(current)
+            self._clear_pending_type2()
+            return [
+                SegmentEvent("TYPE_2_REVERSE_FRACTAL_CONFIRMED", current.id, bi.id,
+                             reverse_fractal.id, BreakType.TYPE_2, current),
+                SegmentEvent("SEGMENT_CONFIRMED", current.id, current.confirmed_end_bi_id,
+                             pending.id, BreakType.TYPE_2, current),
+            ]
 
         # A candidate segment can only accept its own direction and then its
         # opposite-direction feature elements.  Same-direction Bis extend the
@@ -186,6 +212,8 @@ class SegmentEngine:
         # feature sequence; it is not inferred from the gap alone.
         current.state = SegmentState.TYPE_2_PENDING
         self._pending_fractal = fractal
+        self._pending_reverse_features = []
+        self._pending_reverse_standard = []
         events.append(
             SegmentEvent(
                 "SEGMENT_BREAK_CANDIDATE",
@@ -342,6 +370,56 @@ class SegmentEngine:
                 return f.end_index
         return segment.end_index or segment.start_index
 
+
+    def _clear_pending_type2(self) -> None:
+        self._pending_fractal = None
+        self._pending_reverse_features = []
+        self._pending_reverse_standard = []
+
+    def _rebuild_pending_reverse(self, segment: Segment) -> None:
+        result: list[StandardFeatureElement] = []
+        upward = segment.direction is SegmentDirection.DOWN
+        for raw in self._pending_reverse_features:
+            current = StandardFeatureElement(
+                id=f"RSFE_{raw.id}",
+                source_feature_ids=(raw.id,),
+                source_bi_ids=(raw.source_bi_id,),
+                direction=raw.direction,
+                high=raw.high,
+                low=raw.low,
+                start_index=raw.start_index,
+                end_index=raw.end_index,
+            )
+            while result and self._overlap_or_containment(result[-1], current):
+                left = result.pop()
+                current = self._merge_standard(left, current, upward)
+            result.append(current)
+        self._pending_reverse_standard = result
+
+    def _detect_reverse_fractal(self, segment: Segment) -> FeatureFractal | None:
+        fs = self._pending_reverse_standard
+        if len(fs) < 3:
+            return None
+        left, center, right = fs[-3:]
+        if segment.direction is SegmentDirection.UP:
+            is_target = center.low <= left.low and center.low <= right.low
+            kind = "BOTTOM"
+        else:
+            is_target = center.high >= left.high and center.high >= right.high
+            kind = "TOP"
+        if not is_target:
+            return None
+        return FeatureFractal(
+            id=f"RSFF_{left.id}_{center.id}_{right.id}",
+            type=kind,
+            left_id=left.id,
+            center_id=center.id,
+            right_id=right.id,
+            high=center.high,
+            low=center.low,
+            has_gap=max(left.low, center.low) > min(left.high, center.high),
+        )
+
     def current(self) -> Segment | None:
         return self._current
 
@@ -357,4 +435,7 @@ class SegmentEngine:
             "pending_feature_fractal_id": (
                 self._pending_fractal.id if self._pending_fractal else None
             ),
+            "pending_reverse_feature_ids": [
+                x.id for x in self._pending_reverse_standard
+            ],
         }
