@@ -62,3 +62,17 @@ def test_runtime_replay_mismatch_fails_certification():
     c.runner.set_replay_equivalent(False)
     c.stop(1100)
     assert c.status is CertificationStatus.FAILED
+
+
+def test_strict_structural_contract_is_ready():
+    assert TestnetCertificationRun.structural_contract_ready()
+
+
+def test_structural_certification_gate_can_block_precheck():
+    precheck = CertificationPrecheck(True, True, True, True, True, structural_certified=False)
+    assert not precheck.passed
+
+
+def test_structural_certification_gate_preserves_all_existing_requirements():
+    assert CertificationPrecheck(True, True, True, True, True).passed
+    assert not CertificationPrecheck(False, True, True, True, True).passed
