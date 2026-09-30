@@ -131,3 +131,38 @@ def test_recovery_rejects_out_of_order_batch(tmp_path):
         runtime.on_candle(c(180_000))
         with __import__("pytest").raises(ValueError):
             runtime.recover([c(180_000), c(120_000)])
+
+
+def test_restart_restores_idempotency_and_structure(tmp_path):
+    path = tmp_path / "runtime.db"
+    with Live1MRecordedRuntime(path) as runtime:
+        runtime.on_candle(c(60_000))
+        runtime.on_candle(c(120_000, "11", "9", "10"))
+        snapshot = runtime.engine.snapshot()
+        processed = runtime.engine.candles_processed
+        generation = runtime.connection_generation
+
+    with Live1MRecordedRuntime(path) as runtime:
+        assert runtime.engine.snapshot() == snapshot
+        assert runtime.engine.candles_processed == processed
+        assert runtime.connection_generation == generation
+
+        decision = runtime.classify_candle(c(60_000))
+        assert decision.action == "DROP_DUPLICATE"
+        assert runtime.engine.candles_processed == processed
+
+
+def test_restart_preserves_resync_required_state(tmp_path):
+    path = tmp_path / "runtime.db"
+    with Live1MRecordedRuntime(path) as runtime:
+        runtime.on_candle(c(60_000))
+        runtime.on_disconnect("process_restart")
+
+    with Live1MRecordedRuntime(path) as runtime:
+        assert runtime.resync_required is True
+        assert runtime.connection_generation == 0
+
+        runtime.on_reconnect()
+        runtime.recover([c(120_000)])
+        assert runtime.resync_required is False
+        assert runtime.connection_generation == 1
