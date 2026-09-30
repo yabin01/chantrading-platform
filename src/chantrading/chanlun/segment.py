@@ -139,6 +139,19 @@ class SegmentEngine:
             return [SegmentEvent("SEGMENT_STARTED", self._current.id, bi.id)]
 
         if current.state is SegmentState.TYPE_2_PENDING:
+            expected_reverse_direction = self._bi_direction(current.direction)
+            if bi.direction is not expected_reverse_direction:
+                return [
+                    SegmentEvent(
+                        "TYPE_2_NON_REVERSE_BI_IGNORED",
+                        current.id,
+                        bi.id,
+                        self._pending_fractal.id if self._pending_fractal else None,
+                        BreakType.TYPE_2,
+                        current,
+                    )
+                ]
+
             reverse_feature = self._feature_from_bi(bi)
             self._pending_reverse_features.append(reverse_feature)
             self._rebuild_pending_reverse(current)
