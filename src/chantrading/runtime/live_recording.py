@@ -103,6 +103,7 @@ class Live1MRecordedRuntime:
         are replayed through a fresh read-only engine.
         """
         accepted: list[LiveCandle] = []
+        interrupted_recovery = False
         for row in self.store.iter_events():
             self._event_ordinal = max(self._event_ordinal, row.sequence)
             if row.name == "CANDLE_ACCEPTED":
@@ -132,8 +133,7 @@ class Live1MRecordedRuntime:
                 # The exact in-memory batch cannot be reconstructed safely, so force
                 # a fresh recovery cycle from the persisted last accepted candle.
                 self._resync_required = True
-                if self._recovery.state is RecoveryState.HEALTHY:
-                    self._recovery.transition(RecoveryState.GAP_DETECTED)
+                interrupted_recovery = True
             elif row.name == "WS_RESYNC_COMPLETE":
                 self._resync_required = False
                 self._resync_connection_generation = None
@@ -143,6 +143,9 @@ class Live1MRecordedRuntime:
 
         for candle in accepted:
             self.engine.on_candle(candle)
+
+        if interrupted_recovery:
+            self._recovery = RecoveryStateMachine(RecoveryState.GAP_DETECTED)
 
     @property
     def recovery_state(self) -> RecoveryState:
