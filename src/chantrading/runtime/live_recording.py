@@ -17,7 +17,7 @@ from .deterministic_replay import (
     events_hash,
 )
 from .event_store import SQLiteEventStore
-from .event_integrity import CanonicalCandleIdentity, classify_1m_candle
+from .event_integrity import ONE_MINUTE_MS, CanonicalCandleIdentity, classify_1m_candle
 from .live_chanlun import Live1MStructureEngine
 from chantrading.adapters.hyperliquid.live_testnet import LiveCandle
 
