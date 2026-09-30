@@ -137,9 +137,7 @@ class Live1MRecordedRuntime:
             elif row.name == "WS_RESYNC_COMPLETE":
                 self._resync_required = False
                 self._resync_connection_generation = None
-                if self._recovery.state is not RecoveryState.HEALTHY:
-                    if self._recovery.state is RecoveryState.RECOVERED:
-                        self._recovery.reset()
+                interrupted_recovery = False
 
         for candle in accepted:
             self.engine.on_candle(candle)
