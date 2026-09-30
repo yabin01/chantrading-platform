@@ -61,6 +61,71 @@ class Live1MRecordedRuntime:
         self._connection_generation = 0
         self._resync_required = False
         self._accepted_identities = CandleIdempotencyLedger()
+        self._restore_from_store()
+
+    @staticmethod
+    def _identity_key(candle: LiveCandle) -> tuple[str, str, int, str, str, str, str, str]:
+        return (
+            candle.coin,
+            candle.interval,
+            candle.timestamp_ms,
+            candle.open,
+            candle.high,
+            candle.low,
+            candle.close,
+            candle.volume,
+        )
+
+    @staticmethod
+    def _candle_from_payload(
+        payload: dict[str, Any],
+        fallback_timestamp_ms: int,
+    ) -> LiveCandle:
+        return LiveCandle(
+            str(payload["coin"]),
+            str(payload["interval"]),
+            int(payload.get("timestamp_ms", fallback_timestamp_ms)),
+            str(payload["open"]),
+            str(payload["high"]),
+            str(payload["low"]),
+            str(payload["close"]),
+            str(payload["volume"]),
+        )
+
+    def _restore_from_store(self) -> None:
+        """Rebuild runtime state from the durable event history.
+
+        Restart recovery is derived only from accepted candles and lifecycle
+        events. Structural events are not replayed directly; accepted candles
+        are replayed through a fresh read-only engine.
+        """
+        accepted: list[LiveCandle] = []
+        for row in self.store.iter_events():
+            self._event_ordinal = max(self._event_ordinal, row.sequence)
+            if row.name == "CANDLE_ACCEPTED":
+                candle = self._candle_from_payload(row.payload, row.timestamp_ms)
+                self._accepted_identities.admit(self._identity_key(candle))
+                accepted.append(candle)
+                self._last_candle = candle
+                self._resync_required = False
+            elif row.name == "WS_DISCONNECTED":
+                self._resync_required = True
+            elif row.name == "WS_RECONNECTED":
+                generation = int(
+                    row.payload.get(
+                        "connection_generation",
+                        self._connection_generation + 1,
+                    )
+                )
+                self._connection_generation = max(
+                    self._connection_generation,
+                    generation,
+                )
+            elif row.name == "WS_RESYNC_COMPLETE":
+                self._resync_required = False
+
+        for candle in accepted:
+            self.engine.on_candle(candle)
 
     @property
     def resync_required(self) -> bool:
@@ -221,17 +286,7 @@ class Live1MRecordedRuntime:
 
         self._resync_required = False
         self._last_candle = candle
-        identity_key = (
-            candle.coin,
-            candle.interval,
-            candle.timestamp_ms,
-            candle.open,
-            candle.high,
-            candle.low,
-            candle.close,
-            candle.volume,
-        )
-        self._accepted_identities.admit(identity_key)
+        self._accepted_identities.admit(self._identity_key(candle))
         self._event_ordinal += 1
         candle_id = f"candle:{candle.coin}:{candle.timestamp_ms}"
         self.store.append(
