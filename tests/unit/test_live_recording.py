@@ -118,6 +118,19 @@ def test_gap_requires_resync_and_recovery_is_contiguous(tmp_path):
         assert "WS_RESYNC_COMPLETE" in names
 
 
+def test_recovery_verification_excludes_lifecycle_events(tmp_path):
+    path = tmp_path / "runtime.db"
+    with Live1MRecordedRuntime(path) as runtime:
+        runtime.on_candle(c(60_000))
+        runtime.on_disconnect("test_gap")
+        runtime.on_reconnect()
+        runtime.recover([c(120_000), c(180_000)])
+        result = runtime.verification()
+
+    assert result.matched
+    assert result.candle_count == 3
+
+
 def test_conflicting_duplicate_enters_resync(tmp_path):
     with Live1MRecordedRuntime(tmp_path/"runtime.db") as runtime:
         runtime.on_candle(c(60_000, "10", "8", "9"))
