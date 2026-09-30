@@ -127,9 +127,19 @@ class Live1MRecordedRuntime:
                     self._connection_generation,
                     generation,
                 )
+            elif row.name == "WS_RECOVERY_STARTED":
+                # An interrupted recovery is never considered healthy after restart.
+                # The exact in-memory batch cannot be reconstructed safely, so force
+                # a fresh recovery cycle from the persisted last accepted candle.
+                self._resync_required = True
+                if self._recovery.state is RecoveryState.HEALTHY:
+                    self._recovery.transition(RecoveryState.GAP_DETECTED)
             elif row.name == "WS_RESYNC_COMPLETE":
                 self._resync_required = False
                 self._resync_connection_generation = None
+                if self._recovery.state is not RecoveryState.HEALTHY:
+                    if self._recovery.state is RecoveryState.RECOVERED:
+                        self._recovery.reset()
 
         for candle in accepted:
             self.engine.on_candle(candle)
@@ -306,6 +316,15 @@ class Live1MRecordedRuntime:
             expected = candle.timestamp_ms + ONE_MINUTE_MS
 
         self._recovery.transition(RecoveryState.RECOVERING)
+        self._append_lifecycle(
+            "WS_RECOVERY_STARTED",
+            {
+                "last_candle_timestamp_ms": (
+                    None if self._last_candle is None else self._last_candle.timestamp_ms
+                ),
+                "batch_size": len(candles),
+            },
+        )
         all_events: list[LiveStructureEvent] = []
         for candle in candles:
             events = self.on_candle(candle)
