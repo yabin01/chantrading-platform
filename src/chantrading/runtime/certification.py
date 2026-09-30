@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from .soak_runner import SoakRunConfig, SoakTestRunner
+from chantrading.chanlun import CenterEngine, SegmentEngine
 
 
 class CertificationStatus(str, Enum):
@@ -20,6 +21,7 @@ class CertificationPrecheck:
     trading_guard_enabled: bool
     event_store_ready: bool
     replay_ready: bool
+    structural_certified: bool = True
 
     @property
     def passed(self) -> bool:
@@ -29,6 +31,7 @@ class CertificationPrecheck:
             self.trading_guard_enabled,
             self.event_store_ready,
             self.replay_ready,
+            self.structural_certified,
         ))
 
 
