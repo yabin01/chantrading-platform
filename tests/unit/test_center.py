@@ -329,3 +329,28 @@ def test_center_expansion_detects_strict_peripheral_overlap():
     previous = Center(id="C1", state=CenterState.CONFIRMED, segment_ids=["S1"], zg=110, zd=100, gg=112, dd=98, start_index=1, end_index=3)
     following = Center(id="C2", state=CenterState.CONFIRMED, segment_ids=["S4"], zg=95, zd=90, gg=100.1, dd=88, start_index=4, end_index=6)
     assert CenterEngine.classify_center_expansion(previous, following) == "HIGHER_LEVEL_EXPANSION"
+
+
+def test_duplicate_segment_is_idempotent():
+    e = CenterEngine()
+    s = seg(1, 100, 110)
+    assert e.update(s) == []
+    assert e.update(s) == []
+    assert e.segments == [s]
+
+
+def test_out_of_order_segment_is_rejected():
+    e = CenterEngine()
+    e.update(seg(2, 100, 110))
+    try:
+        e.update(seg(1, 101, 109))
+    except ValueError as exc:
+        assert "chronological order" in str(exc)
+    else:
+        raise AssertionError("out-of-order segment must be rejected")
+
+
+def test_unclassified_pair_when_neither_theorem_two_condition_applies():
+    previous = Center(id="C1", state=CenterState.CONFIRMED, segment_ids=["S1"], zg=110, zd=100, gg=112, dd=98, start_index=1, end_index=3)
+    following = Center(id="C2", state=CenterState.CONFIRMED, segment_ids=["S4"], zg=105, zd=101, gg=113, dd=99, start_index=4, end_index=6)
+    assert CenterEngine.classify_center_pair(previous, following) == "UNCLASSIFIED"
