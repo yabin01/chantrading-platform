@@ -165,3 +165,81 @@ def test_center_pair_theorem_two_detects_higher_level_overlap():
         end_index=6,
     )
     assert CenterEngine.classify_center_pair(previous, following) == "HIGHER_LEVEL_OVERLAP"
+
+
+def test_center_expansion_requires_disjoint_centers_and_overlapping_peripheral_ranges():
+    previous = Center(
+        id="C1",
+        state=CenterState.CONFIRMED,
+        segment_ids=["S1", "S2", "S3"],
+        zg=110,
+        zd=100,
+        gg=112,
+        dd=98,
+        start_index=1,
+        end_index=3,
+    )
+    following = Center(
+        id="C2",
+        state=CenterState.CONFIRMED,
+        segment_ids=["S4", "S5", "S6"],
+        zg=95,
+        zd=90,
+        gg=99,
+        dd=89,
+        start_index=4,
+        end_index=6,
+    )
+    assert CenterEngine.classify_center_expansion(previous, following) == "HIGHER_LEVEL_EXPANSION"
+
+
+def test_center_expansion_rejects_overlap_of_center_intervals():
+    previous = Center(
+        id="C1",
+        state=CenterState.CONFIRMED,
+        segment_ids=["S1", "S2", "S3"],
+        zg=110,
+        zd=100,
+        gg=112,
+        dd=98,
+        start_index=1,
+        end_index=3,
+    )
+    following = Center(
+        id="C2",
+        state=CenterState.CONFIRMED,
+        segment_ids=["S4", "S5", "S6"],
+        zg=108,
+        zd=104,
+        gg=116,
+        dd=102,
+        start_index=4,
+        end_index=6,
+    )
+    assert CenterEngine.classify_center_expansion(previous, following) == "NO_HIGHER_LEVEL_EXPANSION"
+
+
+def test_center_expansion_rejects_disjoint_peripheral_ranges():
+    previous = Center(
+        id="C1",
+        state=CenterState.CONFIRMED,
+        segment_ids=["S1", "S2", "S3"],
+        zg=110,
+        zd=100,
+        gg=112,
+        dd=98,
+        start_index=1,
+        end_index=3,
+    )
+    following = Center(
+        id="C2",
+        state=CenterState.CONFIRMED,
+        segment_ids=["S4", "S5", "S6"],
+        zg=90,
+        zd=85,
+        gg=94,
+        dd=80,
+        start_index=4,
+        end_index=6,
+    )
+    assert CenterEngine.classify_center_expansion(previous, following) == "NO_HIGHER_LEVEL_EXPANSION"
