@@ -358,7 +358,46 @@ class Live1MRecordedRuntime:
 
     def _accept_candle(self, candle: LiveCandle) -> tuple[LiveStructureEvent, ...]:
         """Persist and process a candle that has already passed stream validation."""
-        return self._accept_candle(candle)
+        self._resync_required = False
+        self._resync_connection_generation = None
+        self._last_candle = candle
+        self._accepted_identities.admit(self._identity_key(candle))
+        self._event_ordinal += 1
+        candle_id = f"candle:{candle.coin}:{candle.timestamp_ms}"
+        self.store.append(
+            candle_id,
+            "CANDLE_ACCEPTED",
+            candle.timestamp_ms,
+            {
+                "coin": candle.coin,
+                "interval": candle.interval,
+                "timestamp_ms": candle.timestamp_ms,
+                "open": candle.open,
+                "high": candle.high,
+                "low": candle.low,
+                "close": candle.close,
+                "volume": candle.volume,
+                "connection_generation": self._connection_generation,
+            },
+        )
+
+        emitted = tuple(self.engine.on_candle(candle))
+        structural_events = tuple(
+            event for event in emitted if event.type != "CANDLE_ACCEPTED"
+        )
+        for event in structural_events:
+            self._event_ordinal += 1
+            event_id = (
+                f"structure:{candle.coin}:{event.timestamp_ms}:"
+                f"{self._event_ordinal}:{event.type}"
+            )
+            self.store.append(
+                event_id,
+                event.type,
+                event.timestamp_ms,
+                dict(event.payload),
+            )
+        return structural_events
 
     def on_candle(self, candle: LiveCandle) -> tuple[LiveStructureEvent, ...]:
         # Once resync is required, a candle cannot silently clear the gate.
