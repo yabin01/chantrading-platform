@@ -258,16 +258,21 @@ class Live1MRecordedRuntime:
             if self._last_candle is None
             else self._last_candle.timestamp_ms + ONE_MINUTE_MS
         )
-        all_events: list[LiveStructureEvent] = []
+
+        # Validate the complete batch before mutating runtime state. A malformed
+        # recovery response must never partially advance the live engine.
         for candle in candles:
             if expected is not None and candle.timestamp_ms != expected:
                 raise ValueError(
                     f"recovery batch is not contiguous: expected {expected}, "
                     f"got {candle.timestamp_ms}"
                 )
+            expected = candle.timestamp_ms + ONE_MINUTE_MS
+
+        all_events: list[LiveStructureEvent] = []
+        for candle in candles:
             events = self.on_candle(candle)
             all_events.extend(events)
-            expected = candle.timestamp_ms + ONE_MINUTE_MS
         if self._resync_required:
             raise RuntimeError("recovery batch did not restore contiguous state")
         self._append_lifecycle(
