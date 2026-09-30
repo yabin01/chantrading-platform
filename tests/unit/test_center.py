@@ -266,13 +266,14 @@ def test_center_relation_boundary_is_not_continuation():
     assert CenterEngine.classify_center_pair(previous, following) == "HIGHER_LEVEL_OVERLAP"
 
 
-def test_center_relation_is_symmetric_for_reverse_continuation():
-    previous = Center(
+def test_center_relation_is_order_sensitive():
+    lower = Center(
         id="C1", state=CenterState.CONFIRMED, segment_ids=["S1", "S2", "S3"],
-        zg=108, zd=105, gg=110, dd=100, start_index=1, end_index=3,
+        zg=95, zd=90, gg=99, dd=89, start_index=1, end_index=3,
     )
-    following = Center(
+    higher = Center(
         id="C2", state=CenterState.CONFIRMED, segment_ids=["S4", "S5", "S6"],
-        zg=95, zd=90, gg=99, dd=89, start_index=4, end_index=6,
+        zg=108, zd=105, gg=110, dd=100, start_index=4, end_index=6,
     )
-    assert CenterEngine.classify_center_pair(following, previous) == "HIGHER_LEVEL_OVERLAP"
+    assert CenterEngine.classify_center_pair(lower, higher) == "UP_CONTINUATION"
+    assert CenterEngine.classify_center_pair(higher, lower) == "DOWN_CONTINUATION"
