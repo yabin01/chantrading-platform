@@ -26,6 +26,8 @@ class CenterEventType(str, Enum):
     CENTER_CONFIRMED = "CENTER_CONFIRMED"
     CENTER_EXTENDED = "CENTER_EXTENDED"
     CENTER_TERMINATED = "CENTER_TERMINATED"
+    CENTER_NEW = "CENTER_NEW"
+    CENTER_EXPANSION_TOUCH = "CENTER_EXPANSION_TOUCH"
 
 
 @dataclass
@@ -171,6 +173,26 @@ class CenterEngine:
     @staticmethod
     def _overlaps(zd: float, zg: float, low: float, high: float) -> bool:
         return max(zd, low) < min(zg, high)
+
+    def latest_relation(self, segment: Segment) -> str:
+        """Classify a confirmed Segment against the current center geometry.
+
+        Structural classification only; no trade signal or timeframe change.
+        """
+        if self._current is None:
+            return "NO_CURRENT_CENTER"
+        if self._overlaps(self._current.zd, self._current.zg, segment.low, segment.high):
+            return "CENTER_EXTENSION"
+        if segment.low >= self._current.zg:
+            return "ABOVE_CENTER"
+        if segment.high <= self._current.zd:
+            return "BELOW_CENTER"
+        return "NON_OVERLAP"
+
+    def center_bounds(self) -> tuple[float, float] | None:
+        if self._current is None:
+            return None
+        return self._current.zd, self._current.zg
 
     def current(self) -> Center | None:
         return self._current
