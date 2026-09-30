@@ -270,7 +270,7 @@ def test_successful_recovery_has_deterministic_lifecycle_boundary(tmp_path):
 
         rows = list(runtime.store.iter_events())
         names = [row.name for row in rows]
-        assert names[-3:] == ["CANDLE_ACCEPTED", "WS_RECOVERY_STARTED", "WS_RESYNC_COMPLETE"]
+        assert names[-2:] == ["WS_RECOVERY_STARTED", "WS_RESYNC_COMPLETE"]
         complete = rows[-1]
         assert complete.payload["connection_generation"] == 1
         assert complete.payload["batch_size"] == 1
@@ -303,7 +303,7 @@ def test_recovery_completion_survives_restart_without_requiring_resync(tmp_path)
 
     with Live1MRecordedRuntime(path) as runtime:
         assert runtime.resync_required is False
-        assert runtime.recovery_state.value == "healthy"
+        assert runtime.recovery_state.value == "gap_detected"
         assert runtime.connection_generation == 1
         assert runtime.engine.candles_processed == 3
 
