@@ -339,7 +339,11 @@ class Live1MRecordedRuntime:
         self._recovery.reset()
         self._append_lifecycle(
             "WS_RESYNC_COMPLETE",
-            {"last_candle_timestamp_ms": self._last_candle.timestamp_ms},
+            {
+                "last_candle_timestamp_ms": self._last_candle.timestamp_ms,
+                "connection_generation": self._connection_generation,
+                "batch_size": len(candles),
+            },
         )
         self._resync_connection_generation = None
         return tuple(all_events)
