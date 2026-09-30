@@ -153,6 +153,41 @@ class Live1MRecordedRuntime:
             "ACCEPT", "contiguous_1m", expected, candle.timestamp_ms, 0
         )
 
+    def recover(self, candles: list[LiveCandle] | tuple[LiveCandle, ...]) -> tuple[LiveStructureEvent, ...]:
+        """Apply a contiguous recovery batch after disconnect/gap detection.
+
+        Recovery never reorders input. The batch must start immediately after
+        the last accepted candle and every candle must advance exactly 1m.
+        This makes recovery deterministic and preserves the same structural
+        engine input stream that a healthy connection would have produced.
+        """
+        if not candles:
+            raise ValueError("recovery batch must not be empty")
+        if not self._resync_required:
+            raise RuntimeError("recovery is not required")
+        expected = (
+            None
+            if self._last_candle is None
+            else self._last_candle.timestamp_ms + ONE_MINUTE_MS
+        )
+        all_events: list[LiveStructureEvent] = []
+        for candle in candles:
+            if expected is not None and candle.timestamp_ms != expected:
+                raise ValueError(
+                    f"recovery batch is not contiguous: expected {expected}, "
+                    f"got {candle.timestamp_ms}"
+                )
+            events = self.on_candle(candle)
+            all_events.extend(events)
+            expected = candle.timestamp_ms + ONE_MINUTE_MS
+        if self._resync_required:
+            raise RuntimeError("recovery batch did not restore contiguous state")
+        self._append_lifecycle(
+            "WS_RESYNC_COMPLETE",
+            {"last_candle_timestamp_ms": self._last_candle.timestamp_ms},
+        )
+        return tuple(all_events)
+
     def on_candle(self, candle: LiveCandle) -> tuple[LiveStructureEvent, ...]:
         decision = self.classify_candle(candle)
         if decision.action == "DROP_DUPLICATE":
