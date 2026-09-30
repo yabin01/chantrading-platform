@@ -303,6 +303,24 @@ class Live1MRecordedRuntime:
         return tuple(all_events)
 
     def on_candle(self, candle: LiveCandle) -> tuple[LiveStructureEvent, ...]:
+        # Once resync is required, a candle cannot silently clear the gate.
+        # The transport must reconnect first so recovery is tied to a fresh
+        # connection generation and cannot mix pre/post-disconnect streams.
+        if (
+            self._resync_required
+            and (
+                self._resync_connection_generation is None
+                or self._connection_generation <= self._resync_connection_generation
+            )
+        ):
+            self._append_recovery(
+                candle,
+                "RESYNC_REQUIRED",
+                "fresh_reconnect_required",
+                None,
+            )
+            return ()
+
         decision = self.classify_candle(candle)
         if decision.action == "DROP_DUPLICATE":
             return ()
