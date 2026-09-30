@@ -258,6 +258,55 @@ def test_recovery_state_machine_is_integrated_with_live_runtime(tmp_path):
 
 
 
+
+def test_successful_recovery_has_deterministic_lifecycle_boundary(tmp_path):
+    path = tmp_path / "runtime.db"
+    with Live1MRecordedRuntime(path) as runtime:
+        runtime.on_candle(c(60_000))
+        runtime.on_candle(c(180_000))
+        runtime.on_disconnect("test_gap")
+        runtime.on_reconnect()
+        runtime.recover([c(120_000)])
+
+        rows = list(runtime.store.iter_events())
+        names = [row.name for row in rows]
+        assert names[-3:] == ["CANDLE_ACCEPTED", "WS_RECOVERY_STARTED", "WS_RESYNC_COMPLETE"]
+        complete = rows[-1]
+        assert complete.payload["connection_generation"] == 1
+        assert complete.payload["batch_size"] == 1
+        assert complete.payload["last_candle_timestamp_ms"] == 120_000
+
+
+def test_recovery_cannot_be_replayed_after_completion(tmp_path):
+    with Live1MRecordedRuntime(tmp_path / "runtime.db") as runtime:
+        runtime.on_candle(c(60_000))
+        runtime.on_candle(c(180_000))
+        runtime.on_disconnect("test_gap")
+        runtime.on_reconnect()
+        runtime.recover([c(120_000)])
+
+        with __import__("pytest").raises(RuntimeError):
+            runtime.recover([c(180_000)])
+
+        decision = runtime.classify_candle(c(120_000))
+        assert decision.action == "DROP_DUPLICATE"
+
+
+def test_recovery_completion_survives_restart_without_requiring_resync(tmp_path):
+    path = tmp_path / "runtime.db"
+    with Live1MRecordedRuntime(path) as runtime:
+        runtime.on_candle(c(60_000))
+        runtime.on_candle(c(180_000))
+        runtime.on_disconnect("test_gap")
+        runtime.on_reconnect()
+        runtime.recover([c(120_000)])
+
+    with Live1MRecordedRuntime(path) as runtime:
+        assert runtime.resync_required is False
+        assert runtime.recovery_state.value == "healthy"
+        assert runtime.connection_generation == 1
+        assert runtime.engine.candles_processed == 3
+
 def test_restart_downgrades_interrupted_recovery_to_gap_detected(tmp_path):
     from chantrading.runtime.recovery import RecoveryState
 
