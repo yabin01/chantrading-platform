@@ -41,15 +41,16 @@ def test_gap_requires_resync_and_is_not_forwarded(tmp_path):
         assert recovery[-1].payload["reason"] == "timestamp_gap"
 
 
-def test_out_of_order_requires_resync(tmp_path):
+def test_old_accepted_candle_is_dropped_as_idempotent_duplicate(tmp_path):
     with Live1MRecordedRuntime(tmp_path / "runtime.db") as runtime:
         runtime.on_candle(c(1))
         runtime.on_candle(c(60_001))
         runtime.on_candle(c(1))
-        assert runtime.resync_required
+        assert not runtime.resync_required
         assert runtime.engine.candles_processed == 2
         recovery = [row for row in runtime.store.iter_events() if row.name == "CANDLE_RECOVERY"]
-        assert recovery[-1].payload["reason"] == "out_of_order_timestamp"
+        assert recovery[-1].payload["action"] == "DROP_DUPLICATE"
+        assert recovery[-1].payload["reason"] == "accepted_identity_already_seen"
 
 
 def test_conflicting_duplicate_requires_resync(tmp_path):
