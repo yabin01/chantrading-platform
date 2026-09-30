@@ -150,7 +150,17 @@ class Live1MRecordedRuntime:
             identity.low,
             identity.close,
             identity.volume,
-        )\n        if self._accepted_identities.contains(identity_key):\n            return self._append_recovery(\n                candle,\n                "DROP_DUPLICATE",\n                "accepted_identity_already_seen",\n                identity.timestamp_ms,\n            )\n\n        decision = classify_1m_candle(identity, previous)\n        if decision.action == "ACCEPT":
+        )
+        if self._accepted_identities.contains(identity_key):
+            return self._append_recovery(
+                candle,
+                "DROP_DUPLICATE",
+                "accepted_identity_already_seen",
+                identity.timestamp_ms,
+            )
+
+        decision = classify_1m_candle(identity, previous)
+        if decision.action == "ACCEPT":
             return CandleRecoveryDecision(
                 decision.action,
                 decision.reason,
