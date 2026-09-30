@@ -45,8 +45,8 @@ def test_type_one_confirms_on_target_feature_fractal_without_gap():
         (3, BiDirection.UP, 104, 112),
         (4, BiDirection.DOWN, 112, 106),
         (5, BiDirection.UP, 106, 120),
-        (6, BiDirection.DOWN, 120, 105),
-        (7, BiDirection.UP, 105, 113),
+        (6, BiDirection.DOWN, 108, 100),
+        (7, BiDirection.UP, 100, 113),
     ]
     events = []
     for row in prices:
