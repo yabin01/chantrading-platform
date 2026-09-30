@@ -343,7 +343,12 @@ class Live1MRecordedRuntime:
                         str(p["volume"]),
                     )
                 )
-            elif row.name not in {"CANDLE_RECOVERY", "WS_DISCONNECTED", "WS_RECONNECTED"}:
+            elif row.name not in {
+                "CANDLE_RECOVERY",
+                "WS_DISCONNECTED",
+                "WS_RECONNECTED",
+                "WS_RESYNC_COMPLETE",
+            }:
                 recorded_events.append(
                     LiveStructureEvent(row.name, row.timestamp_ms, row.payload)
                 )
