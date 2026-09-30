@@ -17,11 +17,11 @@ from .deterministic_replay import (
     events_hash,
 )
 from .event_store import SQLiteEventStore
+from .event_integrity import CanonicalCandleIdentity, classify_1m_candle
 from .live_chanlun import Live1MStructureEngine
 from chantrading.adapters.hyperliquid.live_testnet import LiveCandle
 
 
-ONE_MINUTE_MS = 60_000
 
 
 @dataclass(frozen=True)
@@ -116,41 +116,44 @@ class Live1MRecordedRuntime:
         )
 
     def classify_candle(self, candle: LiveCandle) -> CandleRecoveryDecision:
-        if candle.interval != "1m":
-            raise ValueError("Live1MRecordedRuntime accepts only 1m candles")
+        identity = CanonicalCandleIdentity(
+            candle.coin,
+            candle.interval,
+            candle.timestamp_ms,
+            candle.open,
+            candle.high,
+            candle.low,
+            candle.close,
+            candle.volume,
+        )
+        previous = None
+        if self._last_candle is not None:
+            previous = CanonicalCandleIdentity(
+                self._last_candle.coin,
+                self._last_candle.interval,
+                self._last_candle.timestamp_ms,
+                self._last_candle.open,
+                self._last_candle.high,
+                self._last_candle.low,
+                self._last_candle.close,
+                self._last_candle.volume,
+            )
 
-        previous = self._last_candle
-        if previous is None:
+        decision = classify_1m_candle(identity, previous)
+        if decision.action == "ACCEPT":
             return CandleRecoveryDecision(
-                "ACCEPT", "initial_candle", None, candle.timestamp_ms, 0
+                decision.action,
+                decision.reason,
+                decision.expected_timestamp_ms,
+                decision.received_timestamp_ms,
+                0,
             )
 
-        if candle.coin != previous.coin:
-            return self._append_recovery(
-                candle, "RESYNC", "coin_changed", previous.timestamp_ms + ONE_MINUTE_MS
-            )
-
-        if candle.timestamp_ms == previous.timestamp_ms:
-            if candle == previous:
-                return self._append_recovery(
-                    candle, "DROP_DUPLICATE", "identical_timestamp_payload", candle.timestamp_ms
-                )
-            return self._append_recovery(
-                candle, "RESYNC", "conflicting_duplicate_timestamp", candle.timestamp_ms
-            )
-
-        expected = previous.timestamp_ms + ONE_MINUTE_MS
-        if candle.timestamp_ms < previous.timestamp_ms:
-            return self._append_recovery(
-                candle, "RESYNC", "out_of_order_timestamp", expected
-            )
-        if candle.timestamp_ms != expected:
-            return self._append_recovery(
-                candle, "RESYNC", "timestamp_gap", expected
-            )
-
-        return CandleRecoveryDecision(
-            "ACCEPT", "contiguous_1m", expected, candle.timestamp_ms, 0
+        return self._append_recovery(
+            candle,
+            decision.action,
+            decision.reason,
+            decision.expected_timestamp_ms,
         )
 
     def recover(self, candles: list[LiveCandle] | tuple[LiveCandle, ...]) -> tuple[LiveStructureEvent, ...]:
