@@ -78,3 +78,32 @@ def test_duplicate_bi_is_idempotent():
     b = bi(1, BiDirection.UP, 100, 110)
     assert len(e.update(b)) == 1
     assert e.update(b) == []
+
+
+def test_type_two_confirms_only_after_reverse_feature_fractal():
+    e = SegmentEngine()
+    prices = [
+        (1, BiDirection.UP, 100, 110),
+        (2, BiDirection.DOWN, 110, 104),
+        (3, BiDirection.UP, 104, 112),
+        (4, BiDirection.DOWN, 112, 111),  # gap vs B2; target top at B4
+        (5, BiDirection.UP, 111, 112),
+        (6, BiDirection.DOWN, 109, 100),   # B6 keeps B4 as feature top
+    ]
+    events = []
+    for row in prices:
+        events.extend(e.update(bi(*row)))
+    assert e.current().state is SegmentState.TYPE_2_PENDING
+    assert not e.confirmed_segments()
+
+    reverse = [
+        (7, BiDirection.UP, 110, 112),
+        (8, BiDirection.UP, 105, 108),
+        (9, BiDirection.UP, 109, 111),
+    ]
+    for row in reverse:
+        events.extend(e.update(bi(*row)))
+
+    assert any(x.type == "TYPE_2_REVERSE_FRACTAL_CONFIRMED" for x in events)
+    assert any(x.type == "SEGMENT_CONFIRMED" and x.break_type.value == "TYPE_2" for x in events)
+    assert e.confirmed_segments()[0].confirmed_end_bi_id == "B4"
