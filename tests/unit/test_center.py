@@ -44,7 +44,7 @@ def test_overlapping_followup_segment_extends_center():
     assert c is not None
     assert c.state is CenterState.EXTENDING
     assert c.extension_count == 1
-    assert c.zd == 106
+    assert c.zd == 105
     assert c.zg == 108
     assert any(x.type is CenterEventType.CENTER_EXTENDED for x in events)
 
@@ -81,3 +81,34 @@ def test_replay_is_deterministic():
         a.update(s)
         b.update(s)
     assert a.snapshot() == b.snapshot()
+
+
+def test_extension_keeps_original_center_interval_fixed():
+    e = CenterEngine()
+    for s in [seg(1, 100, 110), seg(2, 103, 112), seg(3, 105, 108)]:
+        e.update(s)
+
+    e.update(seg(4, 106, 111))
+    c = e.current()
+    assert c is not None
+    assert (c.zd, c.zg) == (105, 108)
+    assert c.gg == 112
+    assert c.dd == 100
+
+
+def test_new_center_must_not_overlap_terminated_center():
+    e = CenterEngine()
+    for s in [seg(1, 100, 110), seg(2, 103, 112), seg(3, 105, 108)]:
+        e.update(s)
+
+    # Terminate above the original center.
+    e.update(seg(4, 109, 115))
+    e.update(seg(5, 110, 118))
+    e.update(seg(6, 112, 120))
+
+    assert e.current() is not None
+    assert e.current().id == "CENTER_S6"
+    assert e.current().segment_ids == ["S4", "S5", "S6"]
+    assert e.current().zd == 112
+    assert e.current().zg == 115
+    assert e.centers[0].terminated_by_segment_id == "S4"
