@@ -86,3 +86,47 @@ def test_live_recording_keeps_structural_events_separate_from_candles(tmp_path):
         names = [row.name for row in runtime.store.iter_events()]
         assert names[0] == "CANDLE_ACCEPTED"
         assert all(name != "CANDLE_ACCEPTED" for name in names[1:])
+
+
+def test_duplicate_is_dropped_without_replaying_structure(tmp_path):
+    with Live1MRecordedRuntime(tmp_path/"runtime.db") as runtime:
+        first = c(60_000)
+        runtime.on_candle(first)
+        runtime.on_candle(first)
+        names = [row.name for row in runtime.store.iter_events()]
+        assert names.count("CANDLE_ACCEPTED") == 1
+        assert "CANDLE_RECOVERY" in names
+        assert runtime.resync_required is False
+
+
+def test_gap_requires_resync_and_recovery_is_contiguous(tmp_path):
+    with Live1MRecordedRuntime(tmp_path/"runtime.db") as runtime:
+        runtime.on_candle(c(60_000))
+        runtime.on_candle(c(180_000))
+        assert runtime.resync_required is True
+
+        runtime.on_disconnect("test_gap")
+        runtime.on_reconnect()
+        runtime.recover([c(120_000), c(180_000)])
+        assert runtime.resync_required is False
+        assert runtime.connection_generation == 1
+
+        names = [row.name for row in runtime.store.iter_events()]
+        assert "WS_DISCONNECTED" in names
+        assert "WS_RECONNECTED" in names
+        assert "WS_RESYNC_COMPLETE" in names
+
+
+def test_conflicting_duplicate_enters_resync(tmp_path):
+    with Live1MRecordedRuntime(tmp_path/"runtime.db") as runtime:
+        runtime.on_candle(c(60_000, "10", "8", "9"))
+        runtime.on_candle(c(60_000, "11", "8", "10"))
+        assert runtime.resync_required is True
+
+
+def test_recovery_rejects_out_of_order_batch(tmp_path):
+    with Live1MRecordedRuntime(tmp_path/"runtime.db") as runtime:
+        runtime.on_candle(c(60_000))
+        runtime.on_candle(c(180_000))
+        with __import__("pytest").raises(ValueError):
+            runtime.recover([c(180_000), c(120_000)])
