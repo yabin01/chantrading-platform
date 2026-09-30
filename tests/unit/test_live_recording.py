@@ -146,6 +146,26 @@ def test_recovery_rejects_out_of_order_batch(tmp_path):
             runtime.recover([c(180_000), c(120_000)])
 
 
+def test_recovery_rejects_duplicate_batch_without_partial_apply(tmp_path):
+    with Live1MRecordedRuntime(tmp_path/"runtime.db") as runtime:
+        runtime.on_candle(c(60_000))
+        runtime.on_candle(c(180_000))
+        processed = runtime.engine.candles_processed
+        snapshot = runtime.engine.snapshot()
+        event_count = len(list(runtime.store.iter_events()))
+
+        runtime.on_disconnect("test_duplicate_batch")
+        runtime.on_reconnect()
+
+        with __import__("pytest").raises(ValueError):
+            runtime.recover([c(120_000), c(180_000), c(180_000)])
+
+        assert runtime.engine.candles_processed == processed
+        assert runtime.engine.snapshot() == snapshot
+        assert len(list(runtime.store.iter_events())) == event_count + 2
+        assert runtime.resync_required is True
+
+
 def test_recovery_rejects_out_of_order_batch_without_partial_apply(tmp_path):
     with Live1MRecordedRuntime(tmp_path/"runtime.db") as runtime:
         runtime.on_candle(c(60_000))
