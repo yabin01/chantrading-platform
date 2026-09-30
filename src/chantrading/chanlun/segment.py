@@ -294,7 +294,16 @@ class SegmentEngine:
                 start_index=raw.start_index,
                 end_index=raw.end_index,
             )
-            while result and self._overlap_or_containment(result[-1], current):
+            # The first and second elements of a candidate feature
+            # fractal straddle the hypothesized turning point.  Lesson 71
+            # makes this boundary explicit: they belong to the same feature
+            # sequence but are not normalized across the turn.  Containment
+            # normalization is applied only from the third element onward.
+            if len(result) < 2:
+                result.append(current)
+                continue
+
+            while result and self._contains(result[-1], current):
                 left = result.pop()
                 current = self._merge_standard(left, current, upward)
             result.append(current)
@@ -302,8 +311,15 @@ class SegmentEngine:
         segment.standard_features = result
 
     @staticmethod
+    def _contains(a: StandardFeatureElement, b: StandardFeatureElement) -> bool:
+        return (
+            (a.low <= b.low and a.high >= b.high)
+            or (b.low <= a.low and b.high >= a.high)
+        )
+
+    @staticmethod
     def _overlap_or_containment(a: StandardFeatureElement, b: StandardFeatureElement) -> bool:
-        return max(a.low, b.low) <= min(a.high, b.high)
+        return SegmentEngine._contains(a, b)
 
     @staticmethod
     def _merge_standard(
