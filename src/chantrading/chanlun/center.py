@@ -216,6 +216,13 @@ class CenterEngine:
             return "HIGHER_LEVEL_EXPANSION"
         return "NO_HIGHER_LEVEL_EXPANSION"
 
+    CENTER_RELATIONS = (
+        "UP_CONTINUATION",
+        "DOWN_CONTINUATION",
+        "HIGHER_LEVEL_OVERLAP",
+        "UNCLASSIFIED",
+    )
+
     @staticmethod
     def classify_center_pair(previous: Center, following: Center) -> str:
         """Classify two same-level centers using Lesson 20 center theorem II.
