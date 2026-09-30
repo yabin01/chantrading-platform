@@ -270,12 +270,23 @@ class Live1MRecordedRuntime:
 
         # Validate the complete batch before mutating runtime state. A malformed
         # recovery response must never partially advance the live engine.
+        batch_keys: set[tuple[str, str, int, str, str, str, str, str]] = set()
         for candle in candles:
+            if candle.interval != "1m":
+                raise ValueError("recovery batch accepts only 1m candles")
+            if self._last_candle is not None and candle.coin != self._last_candle.coin:
+                raise ValueError("recovery batch coin does not match the live stream")
             if expected is not None and candle.timestamp_ms != expected:
                 raise ValueError(
                     f"recovery batch is not contiguous: expected {expected}, "
                     f"got {candle.timestamp_ms}"
                 )
+            key = self._identity_key(candle)
+            if key in batch_keys:
+                raise ValueError("recovery batch contains a duplicate candle")
+            if self._accepted_identities.contains(key):
+                raise ValueError("recovery batch contains an already accepted candle")
+            batch_keys.add(key)
             expected = candle.timestamp_ms + ONE_MINUTE_MS
 
         all_events: list[LiveStructureEvent] = []
