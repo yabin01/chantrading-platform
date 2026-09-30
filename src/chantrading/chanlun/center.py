@@ -71,6 +71,7 @@ class CenterEngine:
         self.segments: list[Segment] = []
         self.centers: list[Center] = []
         self._current: Center | None = None
+        self._last_terminated: Center | None = None
         self._seen_segment_ids: set[str] = set()
 
     def update(self, segment: Segment) -> list[CenterEvent]:
@@ -101,6 +102,7 @@ class CenterEngine:
         if self._current is not None:
             self._current.state = CenterState.TERMINATED
             self._current.terminated_by_segment_id = segment.id
+            self._last_terminated = self._current
             events.append(
                 CenterEvent(
                     CenterEventType.CENTER_TERMINATED,
@@ -115,7 +117,9 @@ class CenterEngine:
             a, b, c = self.segments[-3:]
             zd = max(a.low, b.low, c.low)
             zg = min(a.high, b.high, c.high)
-            if zd < zg:
+            previous = self._last_terminated
+            new_center_is_disjoint = previous is None or not self._overlaps(previous.zd, previous.zg, zd, zg)
+            if zd < zg and new_center_is_disjoint:
                 center = Center(
                     id=f"CENTER_{c.id}",
                     state=CenterState.CONFIRMED,
@@ -130,9 +134,10 @@ class CenterEngine:
                 )
                 self.centers.append(center)
                 self._current = center
+                self._last_terminated = None
                 events.append(
                     CenterEvent(
-                        CenterEventType.CENTER_CONFIRMED,
+                        CenterEventType.CENTER_NEW if previous is not None else CenterEventType.CENTER_CONFIRMED,
                         center.id,
                         c.id,
                         center,
@@ -162,8 +167,7 @@ class CenterEngine:
     def _extend(self, segment: Segment) -> None:
         assert self._current is not None
         self._current.segment_ids.append(segment.id)
-        self._current.zg = min(self._current.zg, segment.high)
-        self._current.zd = max(self._current.zd, segment.low)
+        # ZD/ZG define the original center interval and remain fixed.
         self._current.gg = max(self._current.gg, segment.high)
         self._current.dd = min(self._current.dd, segment.low)
         self._current.extension_count += 1
