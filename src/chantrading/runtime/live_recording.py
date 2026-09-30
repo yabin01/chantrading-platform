@@ -242,7 +242,10 @@ class Live1MRecordedRuntime:
         )
 
         emitted = tuple(self.engine.on_candle(candle))
-        for event in emitted:
+        structural_events = tuple(
+            event for event in emitted if event.type != "CANDLE_ACCEPTED"
+        )
+        for event in structural_events:
             self._event_ordinal += 1
             event_id = (
                 f"structure:{candle.coin}:{event.timestamp_ms}:"
@@ -254,7 +257,7 @@ class Live1MRecordedRuntime:
                 event.timestamp_ms,
                 dict(event.payload),
             )
-        return emitted
+        return structural_events
 
     def verification(self) -> LiveRecordingVerification:
         candles: list[RecordedCandle] = []
@@ -281,6 +284,9 @@ class Live1MRecordedRuntime:
                 )
 
         replay = DeterministicReplay().replay(candles)
+        replay_structural_events = tuple(
+            event for event in replay.events if event.type != "CANDLE_ACCEPTED"
+        )
         return LiveRecordingVerification(
             len(candles),
             events_hash(recorded_events),
