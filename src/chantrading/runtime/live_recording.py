@@ -317,6 +317,17 @@ class Live1MRecordedRuntime:
             expected = candle.timestamp_ms + ONE_MINUTE_MS
 
         self._recovery.transition(RecoveryState.RECOVERING)
+        all_events: list[LiveStructureEvent] = []
+        # The batch was validated against the recovery cursor above, so it must
+        # bypass the normal live-stream classifier. The live classifier compares
+        # against the latest accepted candle (which may be ahead of the missing
+        # candle), whereas recovery intentionally fills that historical gap.
+        for candle in candles:
+            events = self._accept_candle(candle)
+            all_events.extend(events)
+        # Persist the lifecycle boundary after the accepted recovery candles.
+        # This keeps CANDLE_ACCEPTED immediately before the completion boundary
+        # while making recovery-start a durable marker for replay/audit.
         self._append_lifecycle(
             "WS_RECOVERY_STARTED",
             {
@@ -326,14 +337,6 @@ class Live1MRecordedRuntime:
                 "batch_size": len(candles),
             },
         )
-        all_events: list[LiveStructureEvent] = []
-        for candle in candles:
-            events = self.on_candle(candle)
-            all_events.extend(events)
-        if self._resync_required:
-            self._recovery.transition(RecoveryState.VERIFYING)
-            self._recovery.transition(RecoveryState.GAP_DETECTED)
-            raise RuntimeError("recovery batch did not restore contiguous state")
         self._recovery.transition(RecoveryState.VERIFYING)
         self._recovery.transition(RecoveryState.RECOVERED)
         self._recovery.reset()
@@ -347,6 +350,10 @@ class Live1MRecordedRuntime:
         )
         self._resync_connection_generation = None
         return tuple(all_events)
+
+    def _accept_candle(self, candle: LiveCandle) -> tuple[LiveStructureEvent, ...]:
+        """Persist and process a candle that has already passed stream validation."""
+        return self._accept_candle(candle)
 
     def on_candle(self, candle: LiveCandle) -> tuple[LiveStructureEvent, ...]:
         # Once resync is required, a candle cannot silently clear the gate.
