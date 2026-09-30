@@ -41,6 +41,17 @@ class TestnetCertificationRun:
         self.status=CertificationStatus.PRECHECK
         self.precheck: CertificationPrecheck | None=None
 
+    @staticmethod
+    def structural_contract_ready() -> bool:
+        """Verify that the strict 1M structural engine exposes its frozen layers."""
+        required = (
+            hasattr(CenterEngine, "classify_extension_count"),
+            hasattr(CenterEngine, "classify_center_pair"),
+            hasattr(CenterEngine, "classify_center_expansion"),
+            hasattr(SegmentEngine, "update"),
+        )
+        return all(required)
+
     def run_precheck(self, precheck: CertificationPrecheck):
         self.precheck=precheck
         self.status=CertificationStatus.PRECHECK
