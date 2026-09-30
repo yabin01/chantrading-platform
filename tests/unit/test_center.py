@@ -114,38 +114,54 @@ def test_new_center_must_not_overlap_terminated_center():
     assert e.centers[0].terminated_by_segment_id == "S4"
 
 
-def test_center_pair_theorem_two_classifies_continuation_and_higher_overlap():
-    a = seg(1, 100, 110)
-    b = seg(2, 103, 112)
-    c = seg(3, 105, 108)
-    e = CenterEngine()
-    for s in [a, b, c]:
-        e.update(s)
-    first = e.current()
-    assert first is not None
-
-    d = seg(4, 112, 120)
-    e2 = CenterEngine()
-    for s in [d, seg(5, 114, 122), seg(6, 116, 119)]:
-        e2.update(s)
-    second = e2.current()
-    assert second is not None
-
-    assert CenterEngine.classify_center_pair(first, second) == "UP_CONTINUATION"
-    assert CenterEngine.classify_center_pair(second, first) == "DOWN_CONTINUATION"
+def test_center_pair_theorem_two_classifies_up_and_down_continuation():
+    previous = Center(
+        id="C1",
+        state=CenterState.CONFIRMED,
+        segment_ids=["S1", "S2", "S3"],
+        zg=108,
+        zd=105,
+        gg=110,
+        dd=100,
+        start_index=1,
+        end_index=3,
+    )
+    following = Center(
+        id="C2",
+        state=CenterState.CONFIRMED,
+        segment_ids=["S4", "S5", "S6"],
+        zg=120,
+        zd=115,
+        gg=125,
+        dd=111,
+        start_index=4,
+        end_index=6,
+    )
+    assert CenterEngine.classify_center_pair(previous, following) == "UP_CONTINUATION"
+    assert CenterEngine.classify_center_pair(following, previous) == "DOWN_CONTINUATION"
 
 
 def test_center_pair_theorem_two_detects_higher_level_overlap():
-    previous = seg(1, 100, 110)
-    following = seg(2, 104, 114)
-    e = CenterEngine()
-    for s in [previous, seg(3, 102, 112), seg(4, 105, 109)]:
-        e.update(s)
-    first = e.current()
-    assert first is not None
-    e2 = CenterEngine()
-    for s in [following, seg(5, 106, 116), seg(6, 108, 112)]:
-        e2.update(s)
-    second = e2.current()
-    assert second is not None
-    assert CenterEngine.classify_center_pair(first, second) == "HIGHER_LEVEL_OVERLAP"
+    previous = Center(
+        id="C1",
+        state=CenterState.CONFIRMED,
+        segment_ids=["S1", "S2", "S3"],
+        zg=110,
+        zd=100,
+        gg=112,
+        dd=98,
+        start_index=1,
+        end_index=3,
+    )
+    following = Center(
+        id="C2",
+        state=CenterState.CONFIRMED,
+        segment_ids=["S4", "S5", "S6"],
+        zg=95,
+        zd=90,
+        gg=99,
+        dd=89,
+        start_index=4,
+        end_index=6,
+    )
+    assert CenterEngine.classify_center_pair(previous, following) == "HIGHER_LEVEL_OVERLAP"
