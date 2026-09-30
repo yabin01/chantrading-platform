@@ -257,6 +257,30 @@ def test_recovery_state_machine_is_integrated_with_live_runtime(tmp_path):
         assert runtime.recovery_state is RecoveryState.HEALTHY
 
 
+
+def test_restart_downgrades_interrupted_recovery_to_gap_detected(tmp_path):
+    from chantrading.runtime.recovery import RecoveryState
+
+    path = tmp_path / "runtime.db"
+    with Live1MRecordedRuntime(path) as runtime:
+        runtime.on_candle(c(60_000))
+        runtime.on_disconnect("recovery_restart")
+        runtime.on_reconnect()
+        assert runtime.recovery_state is RecoveryState.WAITING_RECONNECT
+        runtime._append_lifecycle(
+            "WS_RECOVERY_STARTED",
+            {"last_candle_timestamp_ms": 60_000, "batch_size": 1},
+        )
+
+    with Live1MRecordedRuntime(path) as runtime:
+        assert runtime.resync_required is True
+        assert runtime.recovery_state is RecoveryState.GAP_DETECTED
+        runtime.on_reconnect()
+        assert runtime.recovery_state is RecoveryState.WAITING_RECONNECT
+        runtime.recover([c(120_000)])
+        assert runtime.recovery_state is RecoveryState.HEALTHY
+        assert runtime.resync_required is False
+
 def test_invalid_recovery_batch_does_not_advance_recovery_state(tmp_path):
     from chantrading.runtime.recovery import RecoveryState
 
