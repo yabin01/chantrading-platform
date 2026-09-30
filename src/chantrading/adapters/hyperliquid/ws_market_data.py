@@ -1,5 +1,6 @@
 """Hyperliquid Testnet WebSocket market-data boundary."""
 from __future__ import annotations
+
 import json
 from dataclasses import dataclass
 from typing import Callable
@@ -22,12 +23,17 @@ class CandleEvent:
 
 def parse_candle_message(message: str | bytes) -> CandleEvent:
     payload = json.loads(message)
-    data = payload.get("data", {})
-    if data.get("channel") != "candle":
+    if payload.get("channel") != "candle":
         raise ValueError("not a candle message")
-    candle = data.get("data")
-    if not candle:
+
+    candle = payload.get("data")
+    if not isinstance(candle, dict):
         raise ValueError("missing candle payload")
+
+    required = ("s", "i", "t", "o", "h", "l", "c", "v")
+    if any(key not in candle for key in required):
+        raise ValueError("missing candle field")
+
     return CandleEvent(
         coin=str(candle["s"]),
         interval=str(candle["i"]),
@@ -61,7 +67,7 @@ class WebSocketMarketDataTransport:
 
     def subscribe(self, coin: str):
         self.ws.send(json.dumps(candle_subscription(coin)))
-    
+
     def handle_message(self, message: str | bytes):
         event = parse_candle_message(message)
         self.on_candle(event)
