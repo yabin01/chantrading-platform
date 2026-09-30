@@ -198,6 +198,24 @@ class CenterEngine:
             return None
         return self._current.zd, self._current.zg
 
+    @staticmethod
+    def classify_center_pair(previous: Center, following: Center) -> str:
+        """Classify two same-level centers using Lesson 20 center theorem II.
+
+        Structural relation only. HIGHER_LEVEL_OVERLAP means the pair satisfies
+        the theorem-II condition for a higher-level center; it does not change
+        the engine's 1M operating timeframe.
+        """
+        if following.gg < previous.dd:
+            return "DOWN_CONTINUATION"
+        if following.dd > previous.gg:
+            return "UP_CONTINUATION"
+        if following.zg < previous.zd and following.gg >= previous.dd:
+            return "HIGHER_LEVEL_OVERLAP"
+        if following.zd > previous.zg and following.dd <= previous.gg:
+            return "HIGHER_LEVEL_OVERLAP"
+        return "UNCLASSIFIED"
+
     def current(self) -> Center | None:
         return self._current
 
