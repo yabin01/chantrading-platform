@@ -243,3 +243,36 @@ def test_center_expansion_rejects_disjoint_peripheral_ranges():
         end_index=6,
     )
     assert CenterEngine.classify_center_expansion(previous, following) == "NO_HIGHER_LEVEL_EXPANSION"
+
+
+def test_center_relation_contract_is_finite_and_stable():
+    assert CenterEngine.CENTER_RELATIONS == (
+        "UP_CONTINUATION",
+        "DOWN_CONTINUATION",
+        "HIGHER_LEVEL_OVERLAP",
+        "UNCLASSIFIED",
+    )
+
+
+def test_center_relation_boundary_is_not_continuation():
+    previous = Center(
+        id="C1", state=CenterState.CONFIRMED, segment_ids=["S1", "S2", "S3"],
+        zg=108, zd=105, gg=110, dd=100, start_index=1, end_index=3,
+    )
+    following = Center(
+        id="C2", state=CenterState.CONFIRMED, segment_ids=["S4", "S5", "S6"],
+        zg=115, zd=110, gg=120, dd=110, start_index=4, end_index=6,
+    )
+    assert CenterEngine.classify_center_pair(previous, following) == "HIGHER_LEVEL_OVERLAP"
+
+
+def test_center_relation_is_symmetric_for_reverse_continuation():
+    previous = Center(
+        id="C1", state=CenterState.CONFIRMED, segment_ids=["S1", "S2", "S3"],
+        zg=108, zd=105, gg=110, dd=100, start_index=1, end_index=3,
+    )
+    following = Center(
+        id="C2", state=CenterState.CONFIRMED, segment_ids=["S4", "S5", "S6"],
+        zg=95, zd=90, gg=99, dd=89, start_index=4, end_index=6,
+    )
+    assert CenterEngine.classify_center_pair(following, previous) == "HIGHER_LEVEL_OVERLAP"
