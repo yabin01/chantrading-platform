@@ -240,3 +240,33 @@ def test_restart_preserves_resync_required_state(tmp_path):
         runtime.recover([c(120_000)])
         assert runtime.resync_required is False
         assert runtime.connection_generation == 1
+
+
+def test_recovery_state_machine_is_integrated_with_live_runtime(tmp_path):
+    from chantrading.runtime.recovery import RecoveryState
+
+    with Live1MRecordedRuntime(tmp_path / "runtime.db") as runtime:
+        assert runtime.recovery_state is RecoveryState.HEALTHY
+        runtime.on_candle(c(60_000))
+        runtime.on_candle(c(180_000))
+        assert runtime.recovery_state is RecoveryState.GAP_DETECTED
+
+        runtime.on_reconnect()
+        assert runtime.recovery_state is RecoveryState.WAITING_RECONNECT
+        runtime.recover([c(120_000)])
+        assert runtime.recovery_state is RecoveryState.HEALTHY
+
+
+def test_invalid_recovery_batch_does_not_advance_recovery_state(tmp_path):
+    from chantrading.runtime.recovery import RecoveryState
+
+    with Live1MRecordedRuntime(tmp_path / "runtime.db") as runtime:
+        runtime.on_candle(c(60_000))
+        runtime.on_candle(c(180_000))
+        runtime.on_reconnect()
+        assert runtime.recovery_state is RecoveryState.WAITING_RECONNECT
+
+        with __import__("pytest").raises(ValueError):
+            runtime.recover([c(180_000), c(120_000)])
+
+        assert runtime.recovery_state is RecoveryState.WAITING_RECONNECT
