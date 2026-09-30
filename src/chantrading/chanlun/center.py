@@ -174,6 +174,20 @@ class CenterEngine:
         self._current.end_index = segment.end_index
         self._current.state = CenterState.EXTENDING
 
+    EXTENSION_LIMIT = 5
+
+    @staticmethod
+    def classify_extension_count(count: int, mode: str = "STRICT_RECURSIVE") -> str:
+        if count < 0:
+            raise ValueError("extension count cannot be negative")
+        if mode == "SAME_LEVEL_DECOMPOSITION":
+            return "SAME_LEVEL_CONTINUATION"
+        if mode != "STRICT_RECURSIVE":
+            raise ValueError(f"unsupported extension mode: {mode}")
+        if count <= CenterEngine.EXTENSION_LIMIT:
+            return "WITHIN_EXTENSION_LIMIT"
+        return "HIGHER_LEVEL_REQUIRED"
+
     @staticmethod
     def _overlaps(zd: float, zg: float, low: float, high: float) -> bool:
         return max(zd, low) < min(zg, high)
