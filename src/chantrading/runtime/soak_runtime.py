@@ -1,8 +1,7 @@
 """Runtime wiring between event bus and soak recorder."""
 from __future__ import annotations
-import json
+
 from .event_bus import RuntimeEvent, RuntimeEventBus
-from .soak_report import SoakTestRecorder
 from .soak_runner import SoakRunConfig, SoakTestRunner
 
 
@@ -21,10 +20,20 @@ class SoakRuntime:
         self.runner = SoakTestRunner(config, clock_ms=clock_ms)
         self.bus = RuntimeEventBus()
 
-    def start(self, started_at_ms=None) -> SoakTestRecorder:
+    def start(self, started_at_ms=None):
         recorder = self.runner.start(started_at_ms)
         for name, method_name in EVENT_TO_COUNTER.items():
-            self.bus.subscribe(name, getattr(self.runner, "record_" + method_name))
+            method = getattr(self.runner, "record_" + method_name)
+
+            def handle(event, method=method):
+                count = event.payload.get("count", 1)
+                if not isinstance(count, int) or isinstance(count, bool):
+                    raise TypeError("runtime event count must be an int")
+                if count < 0:
+                    raise ValueError("runtime event count must be non-negative")
+                method(count)
+
+            self.bus.subscribe(name, handle)
         return recorder
 
     def publish(self, name: str, timestamp_ms: int, payload=None):
