@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from chantrading.chanlun import Bi, BiEngine, Candle, Fractal, FractalEngine
+from chantrading.chanlun import Bi, BiEngine, Candle, Center, CenterEngine, Fractal, FractalEngine, Segment, SegmentEngine
 from chantrading.adapters.hyperliquid.live_testnet import LiveCandle
 
 
@@ -25,11 +25,15 @@ class LiveStructureEvent:
 class Live1MStructureEngine:
     fractal: FractalEngine = field(default_factory=FractalEngine)
     bi: BiEngine = field(default_factory=BiEngine)
+    segment: SegmentEngine = field(default_factory=SegmentEngine)
+    center: CenterEngine = field(default_factory=CenterEngine)
     candles_processed: int = 0
     events: list[LiveStructureEvent] = field(default_factory=list)
     latest_candle: LiveCandle | None = None
     latest_fractal: Fractal | None = None
     latest_bi: Bi | None = None
+    latest_segment: Segment | None = None
+    latest_center: Center | None = None
 
     def on_candle(self, event: LiveCandle) -> list[LiveStructureEvent]:
         if event.interval != "1m":
@@ -78,6 +82,30 @@ class Live1MStructureEngine:
                     )
                     if be.bi is not None:
                         self.latest_bi = be.bi
+                        for se in self.segment.update(be.bi):
+                            payload = {
+                                "segment_id": se.segment_id,
+                                "bi_id": se.bi_id,
+                                "feature_fractal_id": se.feature_fractal_id,
+                                "break_type": se.break_type.value,
+                            }
+                            emitted.append(
+                                LiveStructureEvent(se.type, event.timestamp_ms, payload)
+                            )
+                            if se.segment is not None and se.type == "SEGMENT_CONFIRMED":
+                                self.latest_segment = se.segment
+                                for ce in self.center.update(se.segment):
+                                    emitted.append(
+                                        LiveStructureEvent(
+                                            ce.type.value,
+                                            event.timestamp_ms,
+                                            {
+                                                "center_id": ce.center_id,
+                                                "segment_id": ce.segment_id,
+                                            },
+                                        )
+                                    )
+                                    self.latest_center = ce.center
 
         self.events.extend(emitted)
         return emitted
@@ -95,6 +123,12 @@ class Live1MStructureEngine:
             ),
             "latest_bi_id": (
                 self.latest_bi.id if self.latest_bi is not None else None
+            ),
+            "latest_segment_id": (
+                self.latest_segment.id if self.latest_segment is not None else None
+            ),
+            "latest_center_id": (
+                self.latest_center.id if self.latest_center is not None else None
             ),
             "event_count": len(self.events),
         }
