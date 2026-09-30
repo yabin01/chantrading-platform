@@ -440,6 +440,7 @@ class Live1MRecordedRuntime:
                 "WS_DISCONNECTED",
                 "WS_RECONNECTED",
                 "WS_RESYNC_COMPLETE",
+                "WS_RECOVERY_STARTED",
             }:
                 recorded_events.append(
                     LiveStructureEvent(row.name, row.timestamp_ms, row.payload)
