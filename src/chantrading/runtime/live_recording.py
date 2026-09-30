@@ -60,6 +60,7 @@ class Live1MRecordedRuntime:
         self._last_candle: LiveCandle | None = None
         self._connection_generation = 0
         self._resync_required = False
+        self._resync_connection_generation: int | None = None
         self._accepted_identities = CandleIdempotencyLedger()
         self._restore_from_store()
 
@@ -110,6 +111,7 @@ class Live1MRecordedRuntime:
                 self._resync_required = False
             elif row.name == "WS_DISCONNECTED":
                 self._resync_required = True
+                self._resync_connection_generation = self._connection_generation
             elif row.name == "WS_RECONNECTED":
                 generation = int(
                     row.payload.get(
@@ -123,6 +125,7 @@ class Live1MRecordedRuntime:
                 )
             elif row.name == "WS_RESYNC_COMPLETE":
                 self._resync_required = False
+                self._resync_connection_generation = None
 
         for candle in accepted:
             self.engine.on_candle(candle)
@@ -137,6 +140,7 @@ class Live1MRecordedRuntime:
 
     def on_disconnect(self, reason: str = "transport_disconnect") -> None:
         self._resync_required = True
+        self._resync_connection_generation = self._connection_generation
         self._append_lifecycle("WS_DISCONNECTED", {"reason": reason})
 
     def on_reconnect(self) -> None:
@@ -253,6 +257,11 @@ class Live1MRecordedRuntime:
             raise ValueError("recovery batch must not be empty")
         if not self._resync_required:
             raise RuntimeError("recovery is not required")
+        if (
+            self._resync_connection_generation is None
+            or self._connection_generation <= self._resync_connection_generation
+        ):
+            raise ValueError("recovery requires a fresh reconnect after resync")
         expected = (
             None
             if self._last_candle is None
@@ -279,6 +288,7 @@ class Live1MRecordedRuntime:
             "WS_RESYNC_COMPLETE",
             {"last_candle_timestamp_ms": self._last_candle.timestamp_ms},
         )
+        self._resync_connection_generation = None
         return tuple(all_events)
 
     def on_candle(self, candle: LiveCandle) -> tuple[LiveStructureEvent, ...]:
@@ -287,9 +297,11 @@ class Live1MRecordedRuntime:
             return ()
         if decision.action == "RESYNC":
             self._resync_required = True
+            self._resync_connection_generation = self._connection_generation
             return ()
 
         self._resync_required = False
+        self._resync_connection_generation = None
         self._last_candle = candle
         self._accepted_identities.admit(self._identity_key(candle))
         self._event_ordinal += 1
