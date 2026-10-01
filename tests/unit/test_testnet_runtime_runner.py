@@ -38,7 +38,8 @@ def test_runner_feeds_stream_candles_into_runtime():
 
     assert runner.run("ETH", 7) == 1
     assert holder["stream"].calls == [("ETH", 7)]
-    assert len(runtime.received_events) == 0
+    assert len(runtime.received_events) == 1
+    assert runtime.received_events[0].type == "CANDLE_ACCEPTED"
     assert runtime.structure_engine.fractal.inclusion.processed
 
 
