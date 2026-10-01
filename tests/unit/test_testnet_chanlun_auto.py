@@ -1,6 +1,12 @@
-import os
+import importlib.util
+from pathlib import Path
 
-from scripts.testnet_chanlun_auto import build_runtime
+SCRIPT = Path(__file__).parents[2] / "scripts" / "testnet_chanlun_auto.py"
+SPEC = importlib.util.spec_from_file_location("testnet_chanlun_auto", SCRIPT)
+MODULE = importlib.util.module_from_spec(SPEC)
+assert SPEC.loader is not None
+SPEC.loader.exec_module(MODULE)
+build_runtime = MODULE.build_runtime
 
 
 class FakeWallet:
