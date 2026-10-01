@@ -8,10 +8,7 @@ from chantrading.adapters.hyperliquid.testnet_live import (
     LiveTestnetConfig,
 )
 from chantrading.runtime.testnet_runtime import TestnetRuntime
-from chantrading.runtime.testnet_runtime_runner import (
-    TestnetRuntimeRunner,
-    websocket_factory,
-)
+from chantrading.runtime.testnet_runtime_runner import build_live_runner
 from chantrading.runtime.testnet_signal_execution import (
     TestnetAutoExecutionConfig,
     TestnetSignalExecutor,
@@ -48,12 +45,7 @@ def main() -> int:
     duration = int(os.environ.get("HL_TESTNET_RUN_SECONDS", "600"))
     coin = os.environ.get("HL_TESTNET_INSTRUMENT", "ETH").strip() or "ETH"
 
-    runner = TestnetRuntimeRunner(
-        runtime=runtime,
-        stream_factory=lambda on_candle: runtime.create_candle_stream(websocket_factory)
-        if on_candle == runtime.on_candle
-        else runtime.create_candle_stream(websocket_factory),
-    )
+    runner = build_live_runner(runtime)
 
     print("TESTNET_AUTO_EXECUTION: ENABLED")
     print("TESTNET_INSTRUMENT:", coin)
