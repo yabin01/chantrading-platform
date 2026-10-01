@@ -1,8 +1,4 @@
-"""Hyperliquid Testnet -> live 1M ChanLun runtime bridge.
-
-Phase 1 now includes the deterministic Decision/Signal adapter. Execution
-remains outside this module.
-"""
+"""Hyperliquid Testnet -> live 1M ChanLun runtime bridge."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -11,18 +7,21 @@ from typing import Any
 from chantrading.adapters.hyperliquid.live_testnet import LiveTestnetCandleStream
 from chantrading.runtime.live_chanlun import Live1MStructureEngine, LiveStructureEvent
 from chantrading.runtime.event_store import SQLiteEventStore
+from chantrading.runtime.testnet_signal_execution import TestnetSignalExecutor
 from chantrading.strategy.live_decision import DecisionSignal, Live1MDecisionEngine
 
 
 @dataclass
 class TestnetRuntime:
-    """Minimal live runtime composition for Hyperliquid Testnet canary."""
+    """Live 1M runtime with an optional Testnet signal execution boundary."""
 
     structure_engine: Live1MStructureEngine = field(default_factory=Live1MStructureEngine)
     decision_engine: Live1MDecisionEngine = field(default_factory=Live1MDecisionEngine)
     received_events: list[LiveStructureEvent] = field(default_factory=list)
     decision_events: list[DecisionSignal] = field(default_factory=list)
+    execution_results: list[Any] = field(default_factory=list)
     event_store: SQLiteEventStore | None = None
+    signal_executor: TestnetSignalExecutor | None = None
     _event_sequence: int = 0
 
     def on_candle(self, candle: Any) -> None:
@@ -59,7 +58,12 @@ class TestnetRuntime:
                 self._record_decisions(signals)
 
     def _record_decisions(self, signals: list[DecisionSignal]) -> None:
-        self.decision_events.extend(signals)
+        for signal in signals:
+            self.decision_events.append(signal)
+            if self.signal_executor is not None:
+                result = self.signal_executor.execute(signal)
+                if result is not None:
+                    self.execution_results.append(result)
 
     def _persist(self, events: list[LiveStructureEvent]) -> None:
         if self.event_store is None:
@@ -96,6 +100,7 @@ class TestnetRuntime:
             "decision": self.decision_engine.snapshot(),
             "runtime_events": len(self.received_events),
             "decision_events": len(self.decision_events),
+            "execution_results": len(self.execution_results),
             "stored_events": (
                 self.event_store.count()
                 if self.event_store is not None
