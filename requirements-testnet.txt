@@ -1,2 +1,4 @@
-# Minimal dependency for the live Testnet WebSocket canary
+# Minimal dependencies for the live Hyperliquid Testnet canary
 websocket-client>=1.8,<2
+hyperliquid-python-sdk==0.24.0
+eth-account>=0.13,<1
