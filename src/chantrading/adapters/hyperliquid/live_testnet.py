@@ -3,15 +3,24 @@
 Read-only transport for the first real Testnet canary. Hyperliquid puts
 channel at the websocket message top level; subscription acknowledgements
 and other non-candle messages are ignored by the stream.
+
+The websocket-client package is optional at import time so the rest of the
+runtime/test suite can be imported without a live websocket dependency.
+A real websocket factory is still required when running the canary.
 """
 from __future__ import annotations
 
 import json
 import time
-
-from websocket import WebSocketTimeoutException
 from dataclasses import dataclass
 from typing import Any, Callable
+
+try:
+    from websocket import WebSocketTimeoutException
+except ImportError:  # pragma: no cover - exercised only without websocket-client
+    class WebSocketTimeoutException(TimeoutError):
+        """Fallback used only when websocket-client is not installed."""
+
 
 TESTNET_WS_URL = "wss://api.hyperliquid-testnet.xyz/ws"
 
@@ -103,13 +112,9 @@ class LiveTestnetCandleStream:
                 try:
                     raw = ws.recv()
                 except WebSocketTimeoutException:
-                    # recv() timeouts are expected while waiting for the next
-                    # 1m update; re-check the canary deadline instead of
-                    # treating an idle interval as a transport failure.
                     continue
 
                 event = parse_candle_message(raw)
-
                 if event is None:
                     continue
 
