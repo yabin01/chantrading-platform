@@ -1,0 +1,48 @@
+from chantrading.adapters.hyperliquid.live_testnet import LiveCandle, LiveTestnetCandleStream
+from chantrading.runtime.testnet_runtime import TestnetRuntime
+from chantrading.runtime.testnet_runtime_runner import TestnetRuntimeRunner, build_live_runner
+
+
+class FakeStream:
+    def __init__(self, on_candle):
+        self.on_candle = on_candle
+        self.calls = []
+
+    def run(self, coin, duration_seconds):
+        self.calls.append((coin, duration_seconds))
+        self.on_candle(
+            LiveCandle(
+                coin="ETH",
+                interval="1m",
+                timestamp_ms=1000,
+                open="100",
+                high="101",
+                low="99",
+                close="100.5",
+                volume="1",
+            )
+        )
+        return 1
+
+
+def test_runner_feeds_stream_candles_into_runtime():
+    runtime = TestnetRuntime()
+    holder = {}
+
+    def factory(on_candle):
+        stream = FakeStream(on_candle)
+        holder["stream"] = stream
+        return stream
+
+    runner = TestnetRuntimeRunner(runtime, factory)
+
+    assert runner.run("ETH", 7) == 1
+    assert holder["stream"].calls == [("ETH", 7)]
+    assert len(runtime.received_events) == 0
+    assert runtime.structure_engine.fractal.inclusion.processed
+
+
+def test_build_live_runner_uses_testnet_stream():
+    runtime = TestnetRuntime()
+    runner = build_live_runner(runtime)
+    assert isinstance(runner, TestnetRuntimeRunner)
