@@ -1,10 +1,7 @@
-"""Hyperliquid Testnet -> Live ChanLun runtime bridge.
+"""Hyperliquid Testnet -> live 1M ChanLun runtime bridge.
 
-Phase 1 foundation only:
-- consumes existing LiveTestnetCandleStream
-- forwards validated 1m candles into Live1MStructureEngine
-- optionally persists runtime events through existing EventStore
-- keeps execution out of this module
+Phase 1 now includes the deterministic Decision/Signal adapter. Execution
+remains outside this module.
 """
 from __future__ import annotations
 
@@ -14,6 +11,7 @@ from typing import Any
 from chantrading.adapters.hyperliquid.live_testnet import LiveTestnetCandleStream
 from chantrading.runtime.live_chanlun import Live1MStructureEngine, LiveStructureEvent
 from chantrading.runtime.event_store import SQLiteEventStore
+from chantrading.strategy.live_decision import DecisionSignal, Live1MDecisionEngine
 
 
 @dataclass
@@ -21,14 +19,47 @@ class TestnetRuntime:
     """Minimal live runtime composition for Hyperliquid Testnet canary."""
 
     structure_engine: Live1MStructureEngine = field(default_factory=Live1MStructureEngine)
+    decision_engine: Live1MDecisionEngine = field(default_factory=Live1MDecisionEngine)
     received_events: list[LiveStructureEvent] = field(default_factory=list)
+    decision_events: list[DecisionSignal] = field(default_factory=list)
     event_store: SQLiteEventStore | None = None
     _event_sequence: int = 0
 
     def on_candle(self, candle: Any) -> None:
         events = self.structure_engine.on_candle(candle)
         self.received_events.extend(events)
+        self._process_decisions(events)
         self._persist(events)
+
+    def _process_decisions(self, events: list[LiveStructureEvent]) -> None:
+        for event in events:
+            if event.type == "FRACTAL_CONFIRMED":
+                fractal = self.structure_engine.latest_fractal
+                if fractal is not None:
+                    self._record_decisions(self.decision_engine.on_fractal(fractal))
+
+            elif event.type == "CENTER_TERMINATED":
+                center_id = event.payload.get("center_id")
+                center = next(
+                    (
+                        item
+                        for item in self.structure_engine.center.centers
+                        if item.id == center_id
+                    ),
+                    None,
+                )
+                if center is None:
+                    continue
+                signals = self.decision_engine.on_structure(
+                    center=center,
+                    segments=self.structure_engine.segment.confirmed_segments(),
+                    processed_candles=self.structure_engine.fractal.inclusion.processed,
+                    latest_fractal=self.structure_engine.latest_fractal,
+                )
+                self._record_decisions(signals)
+
+    def _record_decisions(self, signals: list[DecisionSignal]) -> None:
+        self.decision_events.extend(signals)
 
     def _persist(self, events: list[LiveStructureEvent]) -> None:
         if self.event_store is None:
@@ -45,12 +76,7 @@ class TestnetRuntime:
             )
 
     def restore_event_count(self) -> int:
-        """Restore only runtime sequence position from durable events.
-
-        Full ChanLun state reconstruction remains delegated to existing replay
-        components. This Phase 1 hook prevents duplicate event identifiers
-        after a runtime restart.
-        """
+        """Restore only runtime sequence position from durable events."""
         if self.event_store is None:
             return 0
 
@@ -67,7 +93,9 @@ class TestnetRuntime:
     def snapshot(self) -> dict[str, Any]:
         return {
             "structure": self.structure_engine.snapshot(),
+            "decision": self.decision_engine.snapshot(),
             "runtime_events": len(self.received_events),
+            "decision_events": len(self.decision_events),
             "stored_events": (
                 self.event_store.count()
                 if self.event_store is not None
