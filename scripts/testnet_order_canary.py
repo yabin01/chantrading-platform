@@ -10,10 +10,17 @@ Required environment:
   HL_TESTNET_CONFIRM=YES
 """
 from __future__ import annotations
+
 import os
 from decimal import Decimal
-from chantrading.adapters.hyperliquid.testnet_live import LiveTestnetConfig, HyperliquidSdkClient, classify_order_response
-from chantrading.domain.execution import OrderIntent, OrderType, Side, OrderStatus
+
+from chantrading.adapters.hyperliquid.testnet_live import (
+    HyperliquidSdkClient,
+    LiveTestnetConfig,
+    classify_order_response,
+)
+from chantrading.domain.execution import OrderIntent, OrderStatus, OrderType, Side
+
 
 def main() -> int:
     config = LiveTestnetConfig.from_env()
@@ -25,9 +32,11 @@ def main() -> int:
         from eth_account import Account
     except ImportError as exc:
         raise RuntimeError("eth-account is required for the live Testnet canary") from exc
+
     wallet = Account.from_key(private_key)
     if wallet.address.lower() != config.account_address.lower():
         raise RuntimeError("private key address does not match HL_TESTNET_ACCOUNT")
+
     client = HyperliquidSdkClient(config, wallet)
     intent = OrderIntent(
         intent_id="testnet-canary",
@@ -35,19 +44,23 @@ def main() -> int:
         side=Side.BUY,
         quantity=Decimal("0.01"),
         order_type=OrderType.LIMIT,
-        client_order_id="chanlun-testnet-canary",
+        client_order_id="0x00000000000000000000000000000001",
     )
+
     result = client.submit(intent, Decimal("100.00"))
     status = classify_order_response(result)
     print("submit_status:", status.value)
     print("submit_response:", result)
+
     statuses = result.get("response", {}).get("data", {}).get("statuses", [])
     if not statuses or "resting" not in statuses[0]:
         return 1 if status is OrderStatus.REJECTED else 0
+
     oid = int(statuses[0]["resting"]["oid"])
     cancel_result = client.cancel("ETH", oid)
     print("cancel_response:", cancel_result)
     return 0 if cancel_result.get("status") == "ok" else 1
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
