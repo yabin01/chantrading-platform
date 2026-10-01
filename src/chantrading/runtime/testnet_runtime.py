@@ -44,6 +44,20 @@ class TestnetRuntime:
                 payload=event.payload,
             )
 
+    def restore_event_count(self) -> int:
+        """Restore only runtime sequence position from durable events.
+
+        Full ChanLun state reconstruction remains delegated to existing replay
+        components. This Phase 1 hook prevents duplicate event identifiers
+        after a runtime restart.
+        """
+        if self.event_store is None:
+            return 0
+
+        count = self.event_store.count()
+        self._event_sequence = count
+        return count
+
     def create_candle_stream(self, ws_factory: Any) -> LiveTestnetCandleStream:
         return LiveTestnetCandleStream(
             ws_factory=ws_factory,
@@ -59,4 +73,5 @@ class TestnetRuntime:
                 if self.event_store is not None
                 else 0
             ),
+            "event_sequence": self._event_sequence,
         }
