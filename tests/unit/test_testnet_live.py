@@ -7,6 +7,7 @@ from chantrading.adapters.hyperliquid.testnet_live import (
 from chantrading.domain.execution import OrderIntent, OrderStatus, OrderType, Side
 
 ADDRESS = "0x" + "1" * 40
+CLOID = "0x00000000000000000000000000000001"
 
 
 def test_live_config_defaults_to_unconfirmed():
@@ -40,9 +41,11 @@ def test_classify_responses():
 class FakeExchange:
     def __init__(self):
         self.calls = []
+
     def order(self, *args, **kwargs):
         self.calls.append(("order", args, kwargs))
         return {"status": "ok", "response": {"data": {"statuses": [{"resting": {"oid": 7}}]}}}
+
     def cancel(self, instrument, oid):
         self.calls.append(("cancel", instrument, oid))
         return {"status": "ok"}
@@ -54,14 +57,14 @@ class FakeClient(HyperliquidSdkClient):
 
 
 def intent(order_type):
-    return OrderIntent("i", "ETH", Side.BUY, Decimal("0.01"), order_type, client_order_id="cloid")
+    return OrderIntent("i", "ETH", Side.BUY, Decimal("0.01"), order_type, client_order_id=CLOID)
 
 
 def test_client_maps_limit_to_gtc():
     client = FakeClient()
     result = client.submit(intent(OrderType.LIMIT), Decimal("100"))
     assert result["status"] == "ok"
-    assert client.exchange.calls[0][2]["cloid"] == "cloid"
+    assert client.exchange.calls[0][2]["cloid"].to_raw() == CLOID
     assert client.exchange.calls[0][1][4] == {"limit": {"tif": "Gtc"}}
 
 
@@ -75,4 +78,12 @@ def test_client_rejects_unsupported_order_type():
     client = FakeClient()
     with pytest.raises(ValueError, match="MARKET or LIMIT"):
         client.submit(intent(OrderType.STOP_MARKET), Decimal("100"))
+    assert client.exchange.calls == []
+
+
+def test_client_rejects_invalid_cloid():
+    client = FakeClient()
+    invalid = OrderIntent("i", "ETH", Side.BUY, Decimal("0.01"), OrderType.LIMIT, client_order_id="cloid")
+    with pytest.raises(ValueError, match="Cloid hex string"):
+        client.submit(invalid, Decimal("100"))
     assert client.exchange.calls == []
