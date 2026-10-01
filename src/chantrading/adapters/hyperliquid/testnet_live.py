@@ -7,7 +7,9 @@ from decimal import Decimal
 from typing import Any
 
 from chantrading.adapters.hyperliquid.testnet import Network, TestnetConfig
-from chantrading.domain.execution import OrderIntent, OrderStatus, OrderType, Side
+from chantrading.domain.execution import (
+    ExecutionResult, OrderIntent, OrderStatus, OrderType, Side,
+)
 
 TESTNET_API_URL = "https://api.hyperliquid-testnet.xyz"
 
@@ -73,6 +75,24 @@ class HyperliquidSdkClient:
             {"limit": {"tif": tif}},
             reduce_only=intent.reduce_only,
             cloid=cloid,
+        )
+
+    def execution_result(self, intent: OrderIntent, result: dict) -> ExecutionResult:
+        status = classify_order_response(result)
+        statuses = result.get("response", {}).get("data", {}).get("statuses", [])
+        first = statuses[0] if statuses else {}
+        if "filled" in first:
+            oid = first["filled"].get("oid")
+        elif "resting" in first:
+            oid = first["resting"].get("oid")
+        else:
+            oid = None
+        return ExecutionResult(
+            intent_id=intent.intent_id,
+            status=status,
+            venue_order_id=str(oid) if oid is not None else None,
+            client_order_id=intent.client_order_id,
+            evidence_ref=str(result),
         )
 
     def cancel(self, instrument_id: str, venue_order_id: int) -> dict:
