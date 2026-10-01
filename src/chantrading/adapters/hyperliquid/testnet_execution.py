@@ -1,67 +1,101 @@
-"""Testnet execution lifecycle boundary."""
+"""Hyperliquid Testnet execution backend.
+
+Maps the venue-neutral OrderIntent into the official Hyperliquid SDK
+Exchange.order contract. The backend is dependency-light: the SDK Exchange
+instance is injected by the caller, so tests never sign or submit an order.
+"""
 from __future__ import annotations
+
 from dataclasses import dataclass
-from enum import Enum
+from decimal import Decimal
+
+from chantrading.domain.execution import (
+    ExecutionResult, OrderIntent, OrderStatus, OrderType, Position, Side,
+)
 
 
-class OrderState(str, Enum):
-    CREATED="CREATED"
-    SIGNING="SIGNING"
-    SUBMITTED="SUBMITTED"
-    OPEN="OPEN"
-    FILLED="FILLED"
-    CANCELED="CANCELED"
-    REJECTED="REJECTED"
-    UNKNOWN="UNKNOWN"
+@dataclass
+class HyperliquidTestnetBackend:
+    exchange: object
+    account_address: str
 
+    def submit(self, intent: OrderIntent) -> ExecutionResult:
+        if intent.order_type is not OrderType.MARKET:
+            raise ValueError("T3 currently supports MARKET intents only")
+        if intent.instrument_id == "":
+            raise ValueError("instrument_id is required")
+        if intent.quantity <= 0:
+            raise ValueError("quantity must be positive")
 
-@dataclass(frozen=True)
-class TestnetOrderRequest:
-    client_order_id: str
-    symbol: str
-    side: str
-    quantity: str
-    order_type: str
-    reduce_only: bool = False
+        # Hyperliquid SDK represents a market order as an aggressive IOC limit.
+        # The adapter obtains the SDK-compatible limit price from the injected
+        # exchange; no private key/signing logic lives in ChanTrading Core.
+        price = self._market_price(intent)
+        result = self.exchange.order(
+            intent.instrument_id,
+            intent.side is Side.BUY,
+            float(intent.quantity),
+            price,
+            {"limit": {"tif": "Ioc"}},
+            reduce_only=intent.reduce_only,
+            cloid=intent.client_order_id,
+        )
+        return self._execution_result(intent, result)
 
+    def cancel(self, order_id: str) -> ExecutionResult:
+        raise NotImplementedError("T3 submit only; cancellation is T4")
 
-@dataclass(frozen=True)
-class TestnetOrderState:
-    client_order_id: str
-    state: OrderState
-    exchange_order_id: str | None = None
-    filled_quantity: str = "0"
+    def get_position(self, instrument_id: str) -> Position | None:
+        raise NotImplementedError("position reconciliation is T4")
 
+    def get_open_orders(self, instrument_id: str) -> list[dict]:
+        raise NotImplementedError("open-order reconciliation is T4")
 
-_TERMINAL={OrderState.FILLED, OrderState.CANCELED, OrderState.REJECTED}
+    def get_recent_fills(self, instrument_id: str):
+        raise NotImplementedError("fill reconciliation is T4")
 
+    def reconcile(self, instrument_id: str):
+        raise NotImplementedError("reconciliation is T4")
 
-def transition(current: OrderState, target: OrderState) -> OrderState:
-    if current in _TERMINAL and target != current:
-        raise ValueError("terminal order cannot transition")
-    if current == OrderState.UNKNOWN and target == OrderState.CREATED:
-        raise ValueError("UNKNOWN order cannot be recreated blindly")
-    return target
+    def _market_price(self, intent: OrderIntent) -> float:
+        if not hasattr(self.exchange, "_slippage_price"):
+            raise RuntimeError("injected Hyperliquid Exchange lacks market-price support")
+        return float(
+            self.exchange._slippage_price(
+                intent.instrument_id,
+                intent.side is Side.BUY,
+                0.05,
+            )
+        )
 
+    @staticmethod
+    def _execution_result(intent: OrderIntent, result) -> ExecutionResult:
+        if not isinstance(result, dict):
+            return ExecutionResult(
+                intent.intent_id, OrderStatus.UNKNOWN,
+                client_order_id=intent.client_order_id,
+            )
+        if result.get("status") != "ok":
+            return ExecutionResult(
+                intent.intent_id, OrderStatus.REJECTED,
+                client_order_id=intent.client_order_id,
+                evidence_ref=str(result),
+            )
 
-class TestnetExecutionLifecycle:
-    def __init__(self):
-        self.orders: dict[str, TestnetOrderState] = {}
-
-    def create(self, request: TestnetOrderRequest) -> TestnetOrderState:
-        if request.client_order_id in self.orders:
-            raise ValueError("duplicate client_order_id")
-        state=TestnetOrderState(request.client_order_id, OrderState.CREATED)
-        self.orders[request.client_order_id]=state
-        return state
-
-    def update(self, client_order_id: str, target: OrderState, exchange_order_id=None, filled_quantity="0"):
-        current=self.orders[client_order_id]
-        new=transition(current.state,target)
-        state=TestnetOrderState(client_order_id,new,exchange_order_id,filled_quantity)
-        self.orders[client_order_id]=state
-        return state
-
-    def can_retry(self, client_order_id: str) -> bool:
-        state=self.orders[client_order_id].state
-        return state not in {OrderState.SUBMITTED, OrderState.OPEN, OrderState.UNKNOWN}
+        statuses = result.get("response", {}).get("data", {}).get("statuses", [])
+        first = statuses[0] if statuses else {}
+        if "filled" in first:
+            status = OrderStatus.FILLED
+            oid = first["filled"].get("oid")
+        elif "resting" in first:
+            status = OrderStatus.OPEN
+            oid = first["resting"].get("oid")
+        else:
+            status = OrderStatus.UNKNOWN
+            oid = None
+        return ExecutionResult(
+            intent.intent_id, status,
+            venue_order_id=str(oid) if oid is not None else None,
+            client_order_id=intent.client_order_id,
+            evidence_ref=str(result),
+        )
