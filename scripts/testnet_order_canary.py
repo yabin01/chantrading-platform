@@ -1,8 +1,9 @@
 """One-order Hyperliquid Testnet connectivity canary.
 
-Places a deliberately non-marketable ETH GTC limit order and immediately
-cancels it. It verifies credentials, signing, order submission, venue response,
-and cancellation without intentionally taking a position.
+Places a deliberately non-marketable ETH GTC limit order at 90% of the
+current Testnet reference price and immediately cancels it. This verifies
+credentials, signing, order submission, venue response, and cancellation
+without intentionally taking a position.
 
 Required environment:
   HL_TESTNET_ACCOUNT=0x...
@@ -12,7 +13,7 @@ Required environment:
 from __future__ import annotations
 
 import os
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 
 from chantrading.adapters.hyperliquid.testnet_live import (
     HyperliquidSdkClient,
@@ -20,6 +21,22 @@ from chantrading.adapters.hyperliquid.testnet_live import (
     classify_order_response,
 )
 from chantrading.domain.execution import OrderIntent, OrderStatus, OrderType, Side
+
+
+def _canary_price(client: HyperliquidSdkClient) -> Decimal:
+    mids = client.exchange.info.all_mids()
+    raw_mid = mids.get("ETH")
+    if raw_mid is None:
+        raise RuntimeError("ETH Testnet reference price is unavailable")
+    mid = Decimal(str(raw_mid))
+    if mid <= 0:
+        raise RuntimeError("ETH Testnet reference price must be positive")
+    # 90% is intentionally below market, while staying inside Hyperliquid's
+    # 80%-away price validation boundary.
+    price = (mid * Decimal("0.90")).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+    if price <= 0 or price >= mid:
+        raise RuntimeError("computed canary price is invalid")
+    return price
 
 
 def main() -> int:
@@ -38,6 +55,9 @@ def main() -> int:
         raise RuntimeError("private key address does not match HL_TESTNET_ACCOUNT")
 
     client = HyperliquidSdkClient(config, wallet)
+    price = _canary_price(client)
+    print("canary_limit_price:", price)
+
     intent = OrderIntent(
         intent_id="testnet-canary",
         instrument_id="ETH",
@@ -47,7 +67,7 @@ def main() -> int:
         client_order_id="0x00000000000000000000000000000001",
     )
 
-    result = client.submit(intent, Decimal("100.00"))
+    result = client.submit(intent, price)
     status = classify_order_response(result)
     print("submit_status:", status.value)
     print("submit_response:", result)
