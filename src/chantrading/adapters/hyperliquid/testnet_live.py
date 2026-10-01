@@ -1,22 +1,13 @@
-"""Controlled Hyperliquid Testnet live execution boundary.
-
-This module intentionally requires explicit Testnet configuration and an
-explicit caller confirmation before any order is submitted. No private key
-is read by the core runtime until the injected SDK Exchange is constructed.
-"""
+"""Controlled Hyperliquid Testnet live execution boundary."""
 from __future__ import annotations
-
 import os
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
-
 from chantrading.adapters.hyperliquid.testnet import Network, TestnetConfig
 from chantrading.domain.execution import OrderIntent, OrderStatus, OrderType, Side
 
-
 TESTNET_API_URL = "https://api.hyperliquid-testnet.xyz"
-
 
 @dataclass(frozen=True)
 class LiveTestnetConfig:
@@ -24,7 +15,6 @@ class LiveTestnetConfig:
     api_url: str = TESTNET_API_URL
     network: Network = Network.TESTNET
     confirm_testnet: bool = False
-
     @classmethod
     def from_env(cls) -> "LiveTestnetConfig":
         return cls(
@@ -32,13 +22,8 @@ class LiveTestnetConfig:
             api_url=os.environ.get("HL_TESTNET_API_URL", TESTNET_API_URL).strip(),
             confirm_testnet=os.environ.get("HL_TESTNET_CONFIRM", "").strip().upper() == "YES",
         )
-
     def validate(self) -> None:
-        TestnetConfig(
-            network=self.network,
-            ws_url="wss://api.hyperliquid-testnet.xyz/ws",
-            api_url=self.api_url,
-        ).validate()
+        TestnetConfig(self.network, "wss://api.hyperliquid-testnet.xyz/ws", self.api_url).validate()
         if not self.account_address:
             raise ValueError("HL_TESTNET_ACCOUNT is required")
         if not self.account_address.startswith("0x") or len(self.account_address) != 42:
@@ -48,45 +33,29 @@ class LiveTestnetConfig:
         if not self.confirm_testnet:
             raise RuntimeError("Testnet order submission requires HL_TESTNET_CONFIRM=YES")
 
-
 class HyperliquidSdkClient:
-    """Lazy SDK boundary. Construction fails clearly if the SDK is absent."""
-
     def __init__(self, config: LiveTestnetConfig, wallet: Any):
         config.validate()
         try:
             from hyperliquid.exchange import Exchange
         except ImportError as exc:
-            raise RuntimeError(
-                "hyperliquid-python-sdk is required for live Testnet execution"
-            ) from exc
-        self.exchange = Exchange(
-            wallet,
-            config.api_url,
-            account_address=config.account_address,
-        )
-
+            raise RuntimeError("hyperliquid-python-sdk is required for live Testnet execution") from exc
+        self.exchange = Exchange(wallet, config.api_url, account_address=config.account_address)
     def submit(self, intent: OrderIntent, limit_price: Decimal) -> dict:
-        if intent.order_type is not OrderType.MARKET:
-            raise ValueError("T4 live canary currently accepts MARKET intents only")
+        if intent.order_type not in {OrderType.MARKET, OrderType.LIMIT}:
+            raise ValueError("T4 live canary accepts MARKET or LIMIT intents only")
         if intent.quantity <= 0:
             raise ValueError("quantity must be positive")
+        tif = "Ioc" if intent.order_type is OrderType.MARKET else "Gtc"
         return self.exchange.order(
-            intent.instrument_id,
-            intent.side is Side.BUY,
-            float(intent.quantity),
-            float(limit_price),
-            {"limit": {"tif": "Ioc"}},
-            reduce_only=intent.reduce_only,
-            cloid=intent.client_order_id,
+            intent.instrument_id, intent.side is Side.BUY, float(intent.quantity),
+            float(limit_price), {"limit": {"tif": tif}},
+            reduce_only=intent.reduce_only, cloid=intent.client_order_id,
         )
-
     def cancel(self, instrument_id: str, venue_order_id: int) -> dict:
         return self.exchange.cancel(instrument_id, venue_order_id)
-
     def query(self, account_address: str, venue_order_id: int) -> dict:
         return self.exchange.info.query_order_by_oid(account_address, venue_order_id)
-
 
 def classify_order_response(result: dict) -> OrderStatus:
     if not isinstance(result, dict) or result.get("status") != "ok":
