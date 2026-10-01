@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 from chantrading.domain.execution import ExecutionResult, OrderStatus
 from chantrading.runtime.testnet_runtime import TestnetRuntime
 from chantrading.strategy.live_decision import (
@@ -13,6 +11,8 @@ class FakeExecutor:
 
     def execute(self, signal):
         self.calls.append(signal)
+        if signal.side is SignalSide.HOLD:
+            return None
         return ExecutionResult(
             intent_id="OI-1",
             status=OrderStatus.FILLED,
