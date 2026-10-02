@@ -112,6 +112,9 @@ class LiveTestnetCandleStream:
         self.max_reconnects = max_reconnects
         self.reconnect_delay_seconds = reconnect_delay_seconds
         self.reconnects = 0
+        self.expected_candle_step_ms = 60_000
+        self.gap_count = 0
+        self.last_gap_ms = None
 
     def run(self, coin: str = "ETH", duration_seconds: int = 600) -> int:
         if duration_seconds <= 0:
@@ -168,6 +171,8 @@ class LiveTestnetCandleStream:
             "received": self.received,
             "last_candle_ts": self.last_candle_ts,
             "reconnects": self.reconnects,
+            "gap_count": self.gap_count,
+            "last_gap_ms": self.last_gap_ms,
         }
 
     def stop(self):
