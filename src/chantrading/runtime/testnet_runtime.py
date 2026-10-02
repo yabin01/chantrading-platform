@@ -54,16 +54,18 @@ class TestnetRuntime:
     def _record_decisions(self, signals: list[DecisionSignal]) -> None:
         for signal in signals:
             self.decision_events.append(signal)
-            if self.signal_executor is not None:
-                result = self.signal_executor.execute(signal)
-                if result is not None:
-                    self.execution_results.append(result)
-                    self.execution_audit.append(ExecutionAuditRecord(
-                        signal_id=signal.ai_id or "unknown",
-                        intent_id=getattr(result, "intent_id", "unknown"),
-                        status=getattr(result.status, "value", str(result.status)),
-                        venue_order_id=getattr(result, "venue_order_id", None),
-                    ))
+            if self.signal_executor is None:
+                continue
+            result = self.signal_executor.execute(signal)
+            if result is not None:
+                self.execution_results.append(result)
+                status = getattr(result, "status", "UNKNOWN")
+                self.execution_audit.append(ExecutionAuditRecord(
+                    signal_id=signal.ai_id or "unknown",
+                    intent_id=getattr(result, "intent_id", "unknown"),
+                    status=getattr(status, "value", str(status)),
+                    venue_order_id=getattr(result, "venue_order_id", None),
+                ))
 
     def _persist(self, events: list[LiveStructureEvent]) -> None:
         if self.event_store is None:
