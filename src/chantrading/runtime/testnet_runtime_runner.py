@@ -16,13 +16,18 @@ class TestnetRuntimeRunner:
     ):
         self.runtime = runtime
         self.stream_factory = stream_factory
+        self.last_stream_health: dict[str, Any] | None = None
 
     def on_candle(self, candle: Any) -> None:
         self.runtime.on_candle(candle)
 
     def run(self, coin: str = "ETH", duration_seconds: int = 600) -> int:
         stream = self.stream_factory(self.on_candle)
-        return stream.run(coin=coin, duration_seconds=duration_seconds)
+        result = stream.run(coin=coin, duration_seconds=duration_seconds)
+        health = getattr(stream, "health_snapshot", None)
+        if callable(health):
+            self.last_stream_health = health()
+        return result
 
 
 def websocket_factory(url: str) -> Any:
