@@ -22,6 +22,7 @@ class TestnetRuntimeRunner:
         self.execution_safety_allowed: bool | None = None
         self.execution_safety_reason: str | None = None
         self.execution_safety_event: dict[str, Any] | None = None
+        self.execution_safety_history: list[dict[str, Any]] = []
 
     def on_candle(self, candle: Any) -> None:
         self.runtime.on_candle(candle)
@@ -40,6 +41,7 @@ class TestnetRuntimeRunner:
                 "reason": self.execution_safety_reason,
                 "health": dict(self.last_stream_health),
             }
+            self.execution_safety_history.append(dict(self.execution_safety_event))
         else:
             self.stream_health_ok = None
             self.stream_health_reason = "HEALTH_SNAPSHOT_UNAVAILABLE"
@@ -50,6 +52,7 @@ class TestnetRuntimeRunner:
                 "reason": self.execution_safety_reason,
                 "health": None,
             }
+            self.execution_safety_history.append(dict(self.execution_safety_event))
         return result
 
     @staticmethod
