@@ -113,3 +113,25 @@ def test_runner_allows_execution_when_stream_is_healthy():
     runner = TestnetRuntimeRunner(runtime, lambda on_candle: HealthyStream(on_candle))
     runner.run("ETH", 1)
     assert runner.execution_safety_allowed is True
+
+
+def test_runner_exposes_execution_safety_reason_for_healthy_stream():
+    runtime = TestnetRuntime()
+    class HealthyStream(FakeStream):
+        def health_snapshot(self):
+            return {"received": 3, "reconnects": 0, "gap_count": 0, "last_candle_ts": 2000}
+    runner = TestnetRuntimeRunner(runtime, lambda on_candle: HealthyStream(on_candle))
+    runner.run("ETH", 1)
+    assert runner.execution_safety_allowed is True
+    assert runner.execution_safety_reason == "HEALTHY"
+
+
+def test_runner_exposes_execution_safety_reason_for_gap():
+    runtime = TestnetRuntime()
+    class GapStream(FakeStream):
+        def health_snapshot(self):
+            return {"received": 3, "reconnects": 0, "gap_count": 1, "last_candle_ts": 2000}
+    runner = TestnetRuntimeRunner(runtime, lambda on_candle: GapStream(on_candle))
+    runner.run("ETH", 1)
+    assert runner.execution_safety_allowed is False
+    assert runner.execution_safety_reason == "CANDLE_GAP_DETECTED"
