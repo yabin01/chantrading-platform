@@ -37,9 +37,14 @@ class TestnetRuntime:
     def recover_from_store(self) -> int:
         if self.event_store is None:
             return 0
-        result = RuntimeRecovery(self.event_store).replay(lambda _event: None)
+        result = RuntimeRecovery(self.event_store).replay(self._restore_event)
         self._event_sequence = result.latest_sequence
         return result.restored_events
+
+    def _restore_event(self, event: Any) -> None:
+        self.received_events.append(
+            LiveStructureEvent(event.name, event.timestamp_ms, event.payload)
+        )
 
     def _process_decisions(self, events: list[LiveStructureEvent]) -> None:
         for event in events:
