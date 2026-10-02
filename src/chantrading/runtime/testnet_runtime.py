@@ -8,6 +8,7 @@ from chantrading.adapters.hyperliquid.live_testnet import LiveTestnetCandleStrea
 from chantrading.runtime.live_chanlun import Live1MStructureEngine, LiveStructureEvent
 from chantrading.runtime.event_store import SQLiteEventStore
 from chantrading.runtime.testnet_signal_execution import TestnetSignalExecutor
+from chantrading.runtime.decision_diagnostics import collect_decision_diagnostics
 from chantrading.strategy.live_decision import DecisionSignal, Live1MDecisionEngine
 
 
@@ -39,14 +40,7 @@ class TestnetRuntime:
 
             elif event.type == "CENTER_TERMINATED":
                 center_id = event.payload.get("center_id")
-                center = next(
-                    (
-                        item
-                        for item in self.structure_engine.center.centers
-                        if item.id == center_id
-                    ),
-                    None,
-                )
+                center = next((item for item in self.structure_engine.center.centers if item.id == center_id), None)
                 if center is None:
                     continue
                 signals = self.decision_engine.on_structure(
@@ -68,43 +62,36 @@ class TestnetRuntime:
     def _persist(self, events: list[LiveStructureEvent]) -> None:
         if self.event_store is None:
             return
-
         for event in events:
             self._event_sequence += 1
-            event_id = f"testnet-runtime-{self._event_sequence}"
             self.event_store.append(
-                event_id=event_id,
+                event_id=f"testnet-runtime-{self._event_sequence}",
                 name=event.type,
                 timestamp_ms=event.timestamp_ms,
                 payload=event.payload,
             )
 
     def restore_event_count(self) -> int:
-        """Restore only runtime sequence position from durable events."""
         if self.event_store is None:
             return 0
-
-        count = self.event_store.count()
-        self._event_sequence = count
-        return count
+        self._event_sequence = self.event_store.count()
+        return self._event_sequence
 
     def create_candle_stream(self, ws_factory: Any) -> LiveTestnetCandleStream:
-        return LiveTestnetCandleStream(
-            ws_factory=ws_factory,
-            on_candle=self.on_candle,
-        )
+        return LiveTestnetCandleStream(ws_factory=ws_factory, on_candle=self.on_candle)
+
+    def diagnostics(self) -> dict[str, Any]:
+        """Return observational decision diagnostics."""
+        return collect_decision_diagnostics(self).as_dict()
 
     def snapshot(self) -> dict[str, Any]:
         return {
             "structure": self.structure_engine.snapshot(),
             "decision": self.decision_engine.snapshot(),
+            "diagnostics": self.diagnostics(),
             "runtime_events": len(self.received_events),
             "decision_events": len(self.decision_events),
             "execution_results": len(self.execution_results),
-            "stored_events": (
-                self.event_store.count()
-                if self.event_store is not None
-                else 0
-            ),
+            "stored_events": self.event_store.count() if self.event_store is not None else 0,
             "event_sequence": self._event_sequence,
         }
