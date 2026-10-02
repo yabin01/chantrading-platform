@@ -16,8 +16,14 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 try:
-    from websocket import WebSocketTimeoutException
+    from websocket import WebSocketConnectionClosedException, WebSocketException, WebSocketTimeoutException
 except ImportError:  # pragma: no cover - exercised only without websocket-client
+    class WebSocketException(Exception):
+        """Fallback used only when websocket-client is not installed."""
+
+    class WebSocketConnectionClosedException(WebSocketException):
+        """Fallback used only when websocket-client is not installed."""
+
     class WebSocketTimeoutException(TimeoutError):
         """Fallback used only when websocket-client is not installed."""
 
@@ -91,27 +97,50 @@ class LiveTestnetCandleStream:
         self,
         ws_factory: Callable[..., Any],
         on_candle: Callable[[LiveCandle], None],
+        max_reconnects: int = 20,
+        reconnect_delay_seconds: float = 1.0,
     ):
+        if max_reconnects < 0:
+            raise ValueError("max_reconnects must be non-negative")
+        if reconnect_delay_seconds < 0:
+            raise ValueError("reconnect_delay_seconds must be non-negative")
         self.ws_factory = ws_factory
         self.on_candle = on_candle
         self.running = False
         self.received = 0
         self.last_candle_ts: int | None = None
+        self.max_reconnects = max_reconnects
+        self.reconnect_delay_seconds = reconnect_delay_seconds
+        self.reconnects = 0
 
     def run(self, coin: str = "ETH", duration_seconds: int = 600) -> int:
         if duration_seconds <= 0:
             raise ValueError("duration_seconds must be positive")
 
-        ws = self.ws_factory(TESTNET_WS_URL)
-        ws.send(candle_subscription(coin))
         self.running = True
         deadline = time.time() + duration_seconds
+        ws = None
 
         try:
             while self.running and time.time() < deadline:
+                if ws is None:
+                    ws = self.ws_factory(TESTNET_WS_URL)
+                    ws.send(candle_subscription(coin))
+
                 try:
                     raw = ws.recv()
                 except WebSocketTimeoutException:
+                    continue
+                except (WebSocketConnectionClosedException, WebSocketException, OSError):
+                    close = getattr(ws, "close", None)
+                    if close:
+                        close()
+                    ws = None
+                    if self.reconnects >= self.max_reconnects:
+                        raise
+                    self.reconnects += 1
+                    if self.reconnect_delay_seconds:
+                        time.sleep(self.reconnect_delay_seconds)
                     continue
 
                 event = parse_candle_message(raw)
@@ -127,7 +156,7 @@ class LiveTestnetCandleStream:
                     self.on_candle(event)
         finally:
             self.running = False
-            close = getattr(ws, "close", None)
+            close = getattr(ws, "close", None) if ws is not None else None
             if close:
                 close()
 
