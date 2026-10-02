@@ -154,6 +154,11 @@ class LiveTestnetCandleStream:
                     raise RuntimeError("out-of-order candle")
 
                 if event.timestamp_ms != self.last_candle_ts:
+                    if self.last_candle_ts is not None:
+                        gap_ms = event.timestamp_ms - self.last_candle_ts
+                        if gap_ms > self.expected_candle_step_ms:
+                            self.gap_count += 1
+                            self.last_gap_ms = gap_ms
                     self.last_candle_ts = event.timestamp_ms
                     self.received += 1
                     self.on_candle(event)
