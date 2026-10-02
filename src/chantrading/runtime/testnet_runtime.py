@@ -7,6 +7,7 @@ from typing import Any
 from chantrading.adapters.hyperliquid.live_testnet import LiveTestnetCandleStream
 from chantrading.runtime.live_chanlun import Live1MStructureEngine, LiveStructureEvent
 from chantrading.runtime.event_store import SQLiteEventStore
+from chantrading.runtime.recovery import RuntimeRecovery
 from chantrading.runtime.testnet_signal_execution import TestnetSignalExecutor
 from chantrading.runtime.decision_diagnostics import collect_decision_diagnostics
 from chantrading.runtime.execution_audit import ExecutionAuditRecord, ExecutionAuditTrail
@@ -32,6 +33,13 @@ class TestnetRuntime:
         self.received_events.extend(events)
         self._process_decisions(events)
         self._persist(events)
+
+    def recover_from_store(self) -> int:
+        if self.event_store is None:
+            return 0
+        result = RuntimeRecovery(self.event_store).replay(lambda _event: None)
+        self._event_sequence = result.latest_sequence
+        return result.restored_events
 
     def _process_decisions(self, events: list[LiveStructureEvent]) -> None:
         for event in events:
