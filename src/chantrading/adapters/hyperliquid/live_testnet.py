@@ -115,6 +115,7 @@ class LiveTestnetCandleStream:
         self.expected_candle_step_ms = 60_000
         self.gap_count = 0
         self.last_gap_ms = None
+        self.last_health_at = None
 
     def run(self, coin: str = "ETH", duration_seconds: int = 600) -> int:
         if duration_seconds <= 0:
@@ -171,6 +172,7 @@ class LiveTestnetCandleStream:
         return self.received
 
     def health_snapshot(self) -> dict[str, Any]:
+        self.last_health_at = time.time()
         return {
             "running": self.running,
             "received": self.received,
