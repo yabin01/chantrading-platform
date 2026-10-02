@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import json
 import sqlite3
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 
 @dataclass(frozen=True)
@@ -49,6 +49,17 @@ class SQLiteEventStore:
         )
         for sequence,name,timestamp_ms,payload_json in rows:
             yield StoredEvent(sequence,name,timestamp_ms,json.loads(payload_json))
+
+    def replay(self, handler: Callable[[StoredEvent], None]) -> int:
+        count = 0
+        for event in self.iter_events():
+            handler(event)
+            count += 1
+        return count
+
+    def latest_sequence(self) -> int:
+        row = self._db.execute("SELECT MAX(sequence) FROM runtime_events").fetchone()
+        return int(row[0] or 0)
 
     def count(self) -> int:
         return int(self._db.execute("SELECT COUNT(*) FROM runtime_events").fetchone()[0])
