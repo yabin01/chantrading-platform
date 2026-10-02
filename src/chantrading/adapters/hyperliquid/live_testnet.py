@@ -162,5 +162,13 @@ class LiveTestnetCandleStream:
 
         return self.received
 
+    def health_snapshot(self) -> dict[str, Any]:
+        return {
+            "running": self.running,
+            "received": self.received,
+            "last_candle_ts": self.last_candle_ts,
+            "reconnects": self.reconnects,
+        }
+
     def stop(self):
         self.running = False
