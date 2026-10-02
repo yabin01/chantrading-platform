@@ -76,6 +76,7 @@ def test_runner_marks_unhealthy_stream_when_gap_or_reconnect_present():
     runner = TestnetRuntimeRunner(runtime, lambda on_candle: UnhealthyStream(on_candle))
     runner.run("ETH", 1)
     assert runner.stream_health_ok is False
+    assert runner.stream_health_reason == "CANDLE_GAP_DETECTED"
 
 
 def test_runner_marks_healthy_stream_without_gap_or_reconnect():
@@ -86,3 +87,12 @@ def test_runner_marks_healthy_stream_without_gap_or_reconnect():
     runner = TestnetRuntimeRunner(runtime, lambda on_candle: HealthyStream(on_candle))
     runner.run("ETH", 1)
     assert runner.stream_health_ok is True
+    assert runner.stream_health_reason == "HEALTHY"
+
+
+def test_runner_records_missing_health_snapshot_reason():
+    runtime = TestnetRuntime()
+    runner = TestnetRuntimeRunner(runtime, lambda on_candle: FakeStream(on_candle))
+    runner.run("ETH", 1)
+    assert runner.stream_health_ok is None
+    assert runner.stream_health_reason == "HEALTH_SNAPSHOT_UNAVAILABLE"
