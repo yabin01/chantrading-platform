@@ -77,3 +77,35 @@ def test_stream_deduplicates_same_candle():
     except IndexError:
         pass
     assert len(seen) == 2
+
+
+
+def test_stream_reconnects_after_websocket_disconnect(monkeypatch):
+    from websocket import WebSocketConnectionClosedException
+
+    class DisconnectingWS:
+        def send(self, _):
+            pass
+        def recv(self):
+            raise WebSocketConnectionClosedException("lost")
+        def close(self):
+            pass
+
+    class HealthyWS:
+        def send(self, _):
+            pass
+        def recv(self):
+            return msg(2000)
+        def close(self):
+            pass
+
+    sockets = [DisconnectingWS(), HealthyWS()]
+    monkeypatch.setattr("chantrading.adapters.hyperliquid.live_testnet.time.sleep", lambda _: None)
+    calls = iter([1000.0, 1000.0, 1000.0, 1001.0])
+    monkeypatch.setattr("chantrading.adapters.hyperliquid.live_testnet.time.time", lambda: next(calls))
+
+    seen = []
+    stream = LiveTestnetCandleStream(lambda _: sockets.pop(0), seen.append, max_reconnects=1)
+    assert stream.run("ETH", duration_seconds=1) == 1
+    assert stream.reconnects == 1
+    assert len(seen) == 1
