@@ -129,3 +129,23 @@ def test_stream_exposes_reconnect_health():
     assert health["received"] == 1
     assert health["last_candle_ts"] == 1000
     assert health["reconnects"] == 0
+
+
+def test_stream_detects_one_minute_candle_gap():
+    class FakeWS:
+        def __init__(self):
+            self.items = [msg(1000), msg(121000)]
+        def send(self, _): pass
+        def recv(self): return self.items.pop(0)
+        def close(self): pass
+
+    seen = []
+    stream = LiveTestnetCandleStream(lambda _: FakeWS(), seen.append)
+    try:
+        stream.run("ETH", duration_seconds=1)
+    except IndexError:
+        pass
+    health = stream.health_snapshot()
+    assert len(seen) == 2
+    assert health["gap_count"] == 1
+    assert health["last_gap_ms"] == 120000
