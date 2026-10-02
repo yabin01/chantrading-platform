@@ -47,3 +47,22 @@ def test_build_live_runner_uses_testnet_stream():
     runtime = TestnetRuntime()
     runner = build_live_runner(runtime)
     assert isinstance(runner, TestnetRuntimeRunner)
+
+
+def test_runner_captures_stream_health_snapshot():
+    runtime = TestnetRuntime()
+    class HealthyStream(FakeStream):
+        def health_snapshot(self):
+            return {"received": 3, "reconnects": 1, "gap_count": 2, "last_candle_ts": 2000}
+
+    holder = {}
+    def factory(on_candle):
+        stream = HealthyStream(on_candle)
+        holder["stream"] = stream
+        return stream
+
+    runner = TestnetRuntimeRunner(runtime, factory)
+    assert runner.run("ETH", 1) == 1
+    assert runner.last_stream_health == {
+        "received": 3, "reconnects": 1, "gap_count": 2, "last_candle_ts": 2000
+    }
