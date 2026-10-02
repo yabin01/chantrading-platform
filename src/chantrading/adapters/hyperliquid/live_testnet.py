@@ -180,6 +180,7 @@ class LiveTestnetCandleStream:
             "reconnects": self.reconnects,
             "gap_count": self.gap_count,
             "last_gap_ms": self.last_gap_ms,
+            "last_health_at": self.last_health_at,
         }
 
     def stop(self):
