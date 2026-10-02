@@ -9,6 +9,7 @@ from chantrading.runtime.live_chanlun import Live1MStructureEngine, LiveStructur
 from chantrading.runtime.event_store import SQLiteEventStore
 from chantrading.runtime.testnet_signal_execution import TestnetSignalExecutor
 from chantrading.runtime.decision_diagnostics import collect_decision_diagnostics
+from chantrading.runtime.execution_audit import ExecutionAuditRecord, ExecutionAuditTrail
 from chantrading.strategy.live_decision import DecisionSignal, Live1MDecisionEngine
 
 
@@ -23,6 +24,7 @@ class TestnetRuntime:
     execution_results: list[Any] = field(default_factory=list)
     event_store: SQLiteEventStore | None = None
     signal_executor: TestnetSignalExecutor | None = None
+    execution_audit: ExecutionAuditTrail = field(default_factory=ExecutionAuditTrail)
     _event_sequence: int = 0
 
     def on_candle(self, candle: Any) -> None:
@@ -37,19 +39,17 @@ class TestnetRuntime:
                 fractal = self.structure_engine.latest_fractal
                 if fractal is not None:
                     self._record_decisions(self.decision_engine.on_fractal(fractal))
-
             elif event.type == "CENTER_TERMINATED":
                 center_id = event.payload.get("center_id")
                 center = next((item for item in self.structure_engine.center.centers if item.id == center_id), None)
                 if center is None:
                     continue
-                signals = self.decision_engine.on_structure(
+                self._record_decisions(self.decision_engine.on_structure(
                     center=center,
                     segments=self.structure_engine.segment.confirmed_segments(),
                     processed_candles=self.structure_engine.fractal.inclusion.processed,
                     latest_fractal=self.structure_engine.latest_fractal,
-                )
-                self._record_decisions(signals)
+                ))
 
     def _record_decisions(self, signals: list[DecisionSignal]) -> None:
         for signal in signals:
@@ -58,6 +58,12 @@ class TestnetRuntime:
                 result = self.signal_executor.execute(signal)
                 if result is not None:
                     self.execution_results.append(result)
+                    self.execution_audit.append(ExecutionAuditRecord(
+                        signal_id=signal.ai_id or "unknown",
+                        intent_id=getattr(result, "intent_id", "unknown"),
+                        status=getattr(result.status, "value", str(result.status)),
+                        venue_order_id=getattr(result, "venue_order_id", None),
+                    ))
 
     def _persist(self, events: list[LiveStructureEvent]) -> None:
         if self.event_store is None:
@@ -81,7 +87,6 @@ class TestnetRuntime:
         return LiveTestnetCandleStream(ws_factory=ws_factory, on_candle=self.on_candle)
 
     def diagnostics(self) -> dict[str, Any]:
-        """Return observational decision diagnostics."""
         return collect_decision_diagnostics(self).as_dict()
 
     def snapshot(self) -> dict[str, Any]:
@@ -89,6 +94,7 @@ class TestnetRuntime:
             "structure": self.structure_engine.snapshot(),
             "decision": self.decision_engine.snapshot(),
             "diagnostics": self.diagnostics(),
+            "audit": self.execution_audit.snapshot(),
             "runtime_events": len(self.received_events),
             "decision_events": len(self.decision_events),
             "execution_results": len(self.execution_results),
