@@ -17,6 +17,7 @@ class TestnetRuntimeRunner:
         self.runtime = runtime
         self.stream_factory = stream_factory
         self.last_stream_health: dict[str, Any] | None = None
+        self.stream_health_ok: bool | None = None
 
     def on_candle(self, candle: Any) -> None:
         self.runtime.on_candle(candle)
@@ -27,7 +28,14 @@ class TestnetRuntimeRunner:
         health = getattr(stream, "health_snapshot", None)
         if callable(health):
             self.last_stream_health = health()
+            self.stream_health_ok = self._evaluate_stream_health(self.last_stream_health)
+        else:
+            self.stream_health_ok = None
         return result
+
+    @staticmethod
+    def _evaluate_stream_health(health: dict[str, Any]) -> bool:
+        return health.get("gap_count", 0) == 0 and health.get("reconnects", 0) == 0
 
 
 def websocket_factory(url: str) -> Any:
