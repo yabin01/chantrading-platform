@@ -160,3 +160,14 @@ def test_runner_emits_blocked_execution_safety_event():
     runner.run("ETH", 1)
     assert runner.execution_safety_event["allowed"] is False
     assert runner.execution_safety_event["reason"] == "CANDLE_GAP_DETECTED"
+
+
+def test_runner_records_execution_safety_history():
+    runtime = TestnetRuntime()
+    class HealthyStream(FakeStream):
+        def health_snapshot(self):
+            return {"received": 2, "reconnects": 0, "gap_count": 0, "last_candle_ts": 3000}
+    runner = TestnetRuntimeRunner(runtime, lambda on_candle: HealthyStream(on_candle))
+    runner.run("ETH", 1)
+    assert len(runner.execution_safety_history) == 1
+    assert runner.execution_safety_history[0]["reason"] == "HEALTHY"
