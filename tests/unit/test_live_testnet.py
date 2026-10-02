@@ -149,3 +149,18 @@ def test_stream_detects_one_minute_candle_gap():
     assert len(seen) == 2
     assert health["gap_count"] == 1
     assert health["last_gap_ms"] == 120000
+
+
+def test_health_snapshot_updates_observation_time(monkeypatch):
+    monkeypatch.setattr(
+        "chantrading.adapters.hyperliquid.live_testnet.time.time",
+        lambda: 1234.5,
+    )
+    class FakeWS:
+        def send(self, _): pass
+        def recv(self): raise IndexError
+        def close(self): pass
+
+    stream = LiveTestnetCandleStream(lambda _: FakeWS(), lambda _: None)
+    health = stream.health_snapshot()
+    assert health["last_health_at"] == 1234.5
