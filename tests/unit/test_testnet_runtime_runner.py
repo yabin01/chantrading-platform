@@ -96,3 +96,20 @@ def test_runner_records_missing_health_snapshot_reason():
     runner.run("ETH", 1)
     assert runner.stream_health_ok is None
     assert runner.stream_health_reason == "HEALTH_SNAPSHOT_UNAVAILABLE"
+
+
+def test_runner_blocks_execution_when_stream_is_unhealthy():
+    runtime = TestnetRuntime()
+    runner = TestnetRuntimeRunner(runtime, lambda on_candle: FakeStream(on_candle))
+    runner.run("ETH", 1)
+    assert runner.execution_safety_allowed is False
+
+
+def test_runner_allows_execution_when_stream_is_healthy():
+    runtime = TestnetRuntime()
+    class HealthyStream(FakeStream):
+        def health_snapshot(self):
+            return {"received": 3, "reconnects": 0, "gap_count": 0, "last_candle_ts": 2000}
+    runner = TestnetRuntimeRunner(runtime, lambda on_candle: HealthyStream(on_candle))
+    runner.run("ETH", 1)
+    assert runner.execution_safety_allowed is True
