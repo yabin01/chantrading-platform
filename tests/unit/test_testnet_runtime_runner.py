@@ -66,3 +66,23 @@ def test_runner_captures_stream_health_snapshot():
     assert runner.last_stream_health == {
         "received": 3, "reconnects": 1, "gap_count": 2, "last_candle_ts": 2000
     }
+
+
+def test_runner_marks_unhealthy_stream_when_gap_or_reconnect_present():
+    runtime = TestnetRuntime()
+    class UnhealthyStream(FakeStream):
+        def health_snapshot(self):
+            return {"received": 3, "reconnects": 1, "gap_count": 2, "last_candle_ts": 2000}
+    runner = TestnetRuntimeRunner(runtime, lambda on_candle: UnhealthyStream(on_candle))
+    runner.run("ETH", 1)
+    assert runner.stream_health_ok is False
+
+
+def test_runner_marks_healthy_stream_without_gap_or_reconnect():
+    runtime = TestnetRuntime()
+    class HealthyStream(FakeStream):
+        def health_snapshot(self):
+            return {"received": 3, "reconnects": 0, "gap_count": 0, "last_candle_ts": 2000}
+    runner = TestnetRuntimeRunner(runtime, lambda on_candle: HealthyStream(on_candle))
+    runner.run("ETH", 1)
+    assert runner.stream_health_ok is True
